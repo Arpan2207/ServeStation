@@ -1,0 +1,25 @@
+---
+description: Enforce hybrid Unistyles UI patterns and meaningful code comments
+alwaysApply: true
+---
+
+# Hybrid Unistyles UI
+
+- Use **react-native-unistyles** for app theming, tokens, breakpoints, and screen/component style definitions.
+- Match the **Figma design** as the source of truth for visual UI. Do not drift into Material-like defaults or generic library styling.
+- Do **not** introduce Tamagui or other heavyweight styled UI kits unless the user explicitly requests it.
+- Prefer a **hybrid approach**:
+  - build simple presentational components ourselves (`Card`, `Button`, `Chip`, `Section`, `Screen`, layout stacks)
+  - avoid custom-building behavior-heavy widgets unless necessary
+- For complex interaction components (`Dialog`, `Popover`, `Menu`, `Select`, `Combobox`, `Checkbox`, `Switch`, date/time pickers), prefer React Native built-ins or **unstyled/headless primitives** when possible, then style them to match Figma with Unistyles.
+- Centralize colors, spacing, radii, typography, shadows, and breakpoints in the Unistyles theme instead of scattering hardcoded values.
+- Prefer Unistyles style sheets over large inline style objects; only use inline styles for tiny dynamic values.
+- Build responsive layouts with Unistyles breakpoints and orientation-aware rules, especially for tablet split-pane screens.
+
+## Code Comments
+
+- Add clear, meaningful comments throughout the codebase.
+- Every file should have a top-level comment explaining its purpose.
+- Every exported function, component, hook, and type should have a doc comment describing what it does, its parameters, and its return value.
+- Add inline comments wherever logic is non-trivial, conditional, or could confuse a future reader.
+- Keep comments concise but informative — they should explain *why*, not just *what*.
