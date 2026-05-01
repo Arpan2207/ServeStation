@@ -1,12 +1,16 @@
 /**
- * 2x2 grid of compact upsell / add-on cards shown beside the selected-item panel.
- * The first card uses the orange-highlighted variant; the rest use the default surface.
+ * 2x2 grid of compact upsell / add-on cards shown beside (or below)
+ * the selected-item panel. The first card uses the orange-highlighted
+ * variant; the rest use the default surface.
+ *
+ * The grid no longer uses a fixed outer width — it fills the available
+ * space via flex and adapts its inner sizing through breakpoints.
  */
 
-import React from "react";
-import { View, Text } from "react-native";
-import { StyleSheet } from "react-native-unistyles";
 import { Card } from "@/components/ui/Card";
+import React from "react";
+import { Text, View } from "react-native";
+import { StyleSheet } from "react-native-unistyles";
 
 interface UpsellItem {
   label: string;
@@ -60,18 +64,35 @@ export function UpsellGrid() {
 
 const styles = StyleSheet.create((theme) => ({
   grid: {
-    width: 295,
-    gap: 10,
+    flex: 1,
+    minWidth: {
+      xs: 0,
+      lg: 240,
+    },
+    maxWidth: {
+      xs: undefined,
+      lg: 320,
+    },
+    gap: {
+      xs: 8,
+      md: 10,
+    },
   },
   row: {
     flexDirection: "row",
-    gap: 10,
+    gap: {
+      xs: 8,
+      md: 10,
+    },
     flex: 1,
   },
   cell: {
     flex: 1,
     minWidth: 0,
-    paddingHorizontal: 13,
+    paddingHorizontal: {
+      xs: 10,
+      md: 13,
+    },
     paddingTop: 11,
     paddingBottom: 8,
   },

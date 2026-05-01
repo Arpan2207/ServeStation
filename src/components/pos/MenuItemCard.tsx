@@ -1,6 +1,9 @@
 /**
- * A single menu-item tile shown in the 3-column grid on the left pane.
+ * A single menu-item tile shown in the responsive grid on the left pane.
  * Displays the item name, a short description, price, and an "Add item" button.
+ *
+ * Card height adapts via breakpoints instead of using a single fixed value,
+ * so the grid stays readable from small tablets to large landscape screens.
  */
 
 import React from "react";
@@ -38,12 +41,20 @@ const styles = StyleSheet.create((theme) => ({
   card: {
     flex: 1,
     minWidth: 0,
-    height: 148,
+    minHeight: {
+      xs: 120,
+      sm: 130,
+      md: 140,
+      lg: 148,
+    },
     justifyContent: "space-between",
   },
   name: {
     fontFamily: theme.typography.fontFamily.body,
-    fontSize: theme.typography.size["2xl"],
+    fontSize: {
+      xs: theme.typography.size.xl,
+      lg: theme.typography.size["2xl"],
+    },
     lineHeight: 20,
     color: theme.colors.textPrimary,
   },
@@ -67,8 +78,14 @@ const styles = StyleSheet.create((theme) => ({
   addButton: {
     backgroundColor: theme.colors.primaryLight,
     borderRadius: theme.radii.lg,
-    paddingHorizontal: 14,
-    paddingVertical: 11,
+    paddingHorizontal: {
+      xs: 10,
+      md: 14,
+    },
+    paddingVertical: {
+      xs: 8,
+      md: 11,
+    },
   },
   addLabel: {
     fontFamily: theme.typography.fontFamily.body,

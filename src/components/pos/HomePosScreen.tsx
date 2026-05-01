@@ -3,21 +3,25 @@
  * Layout: two-pane split — left pane (categories, menu grid, editor area)
  * and right pane (persistent cart sidebar).
  *
+ * The column count and bottom-editor orientation adapt to the available
+ * width via Unistyles breakpoints + useWindowDimensions for structural
+ * decisions that affect the JSX tree.
+ *
  * All data is static for this initial UI-only pass.
  */
 
 import React from "react";
-import { View, ScrollView } from "react-native";
+import { ScrollView, useWindowDimensions, View } from "react-native";
 import { StyleSheet } from "react-native-unistyles";
 
 import { Screen } from "@/components/ui/Screen";
 import { HStack } from "@/components/ui/Stack";
+import { CartPanel } from "./CartPanel";
 import { CategoryBar } from "./CategoryBar";
-import { QuickTools } from "./QuickTools";
 import { MenuItemCard } from "./MenuItemCard";
+import { QuickTools } from "./QuickTools";
 import { SelectedItemPanel } from "./SelectedItemPanel";
 import { UpsellGrid } from "./UpsellGrid";
-import { CartPanel } from "./CartPanel";
 
 /* ── Static menu data (matched to Figma) ─────────────── */
 
@@ -36,8 +40,6 @@ const MENU_ITEMS: MenuItem[] = [
   { name: "Chicken Wrap", description: "Grilled chicken, greens, and aioli in a soft wrap.", price: "$11.90" },
 ];
 
-const COLUMNS = 3;
-
 /** Split a flat array into rows of `cols` items each. */
 function chunkArray<T>(arr: T[], cols: number): T[][] {
   const rows: T[][] = [];
@@ -47,10 +49,32 @@ function chunkArray<T>(arr: T[], cols: number): T[][] {
   return rows;
 }
 
+/**
+ * Derive the number of menu-grid columns from the viewport width.
+ * Matches the registered breakpoints in src/theme/breakpoints.ts.
+ */
+function useMenuColumns(): number {
+  const { width } = useWindowDimensions();
+  if (width < 600) return 1;
+  if (width < 768) return 2;
+  return 3;
+}
+
+/**
+ * On narrower viewports the bottom editor stacks vertically
+ * instead of sitting side-by-side with the upsell grid.
+ */
+function useEditorStacked(): boolean {
+  const { width } = useWindowDimensions();
+  return width < 768;
+}
+
 /* ── Component ───────────────────────────────────────── */
 
 export function HomePosScreen() {
-  const menuRows = chunkArray(MENU_ITEMS, COLUMNS);
+  const columns = useMenuColumns();
+  const editorStacked = useEditorStacked();
+  const menuRows = chunkArray(MENU_ITEMS, columns);
 
   return (
     <Screen>
@@ -60,7 +84,7 @@ export function HomePosScreen() {
           <CategoryBar />
           <QuickTools />
 
-          {/* Menu grid (scrollable on overflow) */}
+          {/* Menu grid — scrollable, grows to fill remaining space */}
           <ScrollView
             style={styles.menuScroll}
             contentContainerStyle={styles.menuContent}
@@ -76,17 +100,22 @@ export function HomePosScreen() {
                     price={item.price}
                   />
                 ))}
-                {/* Fill remaining column slots so cards size equally */}
-                {row.length < COLUMNS &&
-                  Array.from({ length: COLUMNS - row.length }).map((_, j) => (
+                {/* Invisible spacers keep cards equally sized when a row is partial */}
+                {row.length < columns &&
+                  Array.from({ length: columns - row.length }).map((_, j) => (
                     <View key={`spacer-${j}`} style={styles.spacer} />
                   ))}
               </HStack>
             ))}
           </ScrollView>
 
-          {/* Bottom editor area */}
-          <View style={styles.bottomEditor}>
+          {/* Bottom editor — side-by-side on wide screens, stacked on narrow */}
+          <View
+            style={[
+              styles.bottomEditor,
+              editorStacked && styles.bottomEditorStacked,
+            ]}
+          >
             <SelectedItemPanel />
             <UpsellGrid />
           </View>
@@ -108,20 +137,34 @@ const styles = StyleSheet.create((theme) => ({
   },
   leftPane: {
     flex: 1,
-    padding: theme.spacing["4xl"],
-    gap: theme.spacing["3xl"],
+    padding: {
+      xs: theme.spacing.xl,
+      md: theme.spacing["3xl"],
+      lg: theme.spacing["4xl"],
+    },
+    gap: {
+      xs: theme.spacing.xl,
+      md: theme.spacing["3xl"],
+    },
   },
   menuScroll: {
-    flex: 0,
+    flex: 1,
+    minHeight: 120,
   },
   menuContent: {
-    gap: 12,
+    gap: {
+      xs: 8,
+      md: 12,
+    },
   },
   bottomEditor: {
-    flex: 1,
     flexDirection: "row",
     gap: 12,
     overflow: "hidden",
+    minHeight: 140,
+  },
+  bottomEditorStacked: {
+    flexDirection: "column",
   },
   spacer: {
     flex: 1,

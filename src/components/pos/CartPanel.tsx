@@ -3,6 +3,9 @@
  * Shows: header ("Current cart"), order-type chips, cart line items,
  * action buttons, order totals, and the primary "Simulate place order" CTA.
  *
+ * Width, padding, and internal spacing adapt to breakpoints so the panel
+ * stays usable from ~600dp tablets up to large landscape screens.
+ *
  * All data is static / mock for the initial UI-only build.
  */
 
@@ -46,7 +49,7 @@ export function CartPanel() {
         </View>
       </View>
 
-      {/* Order type chips */}
+      {/* Order type chips — wraps when the sidebar is narrow */}
       <View style={styles.orderTypes}>
         {ORDER_TYPES.map((t) => (
           <Chip key={t} label={t} active={t === "Dine-in"} dark={t !== "Dine-in"} />
@@ -62,8 +65,12 @@ export function CartPanel() {
         {CART_ITEMS.map((item) => (
           <View key={item.name} style={styles.cartItem}>
             <View style={styles.cartItemInfo}>
-              <Text style={styles.cartItemName}>{item.name}</Text>
-              <Text style={styles.cartItemNote}>{item.note}</Text>
+              <Text style={styles.cartItemName} numberOfLines={1}>
+                {item.name}
+              </Text>
+              <Text style={styles.cartItemNote} numberOfLines={1}>
+                {item.note}
+              </Text>
             </View>
             <View style={styles.qtyControls}>
               <View style={styles.qtyBtn}>
@@ -113,15 +120,29 @@ function TotalRow({ label, value }: { label: string; value: string }) {
 const styles = StyleSheet.create((theme) => ({
   sidebar: {
     width: {
-      xs: 300,
+      xs: 260,
+      sm: 300,
       md: 340,
       lg: 372,
     },
     backgroundColor: theme.colors.sidebar,
-    paddingHorizontal: 18,
-    paddingTop: 18,
-    paddingBottom: 28,
-    gap: 18,
+    paddingHorizontal: {
+      xs: 12,
+      sm: 14,
+      md: 18,
+    },
+    paddingTop: {
+      xs: 14,
+      md: 18,
+    },
+    paddingBottom: {
+      xs: 18,
+      md: 28,
+    },
+    gap: {
+      xs: 12,
+      md: 18,
+    },
     borderTopRightRadius: theme.radii["3xl"],
     borderBottomRightRadius: theme.radii["3xl"],
   },
@@ -133,11 +154,15 @@ const styles = StyleSheet.create((theme) => ({
     justifyContent: "space-between",
   },
   headerLeft: {
+    flex: 1,
     gap: 3,
   },
   headerTitle: {
     fontFamily: theme.typography.fontFamily.body,
-    fontSize: theme.typography.size["3xl"],
+    fontSize: {
+      xs: theme.typography.size["2xl"],
+      md: theme.typography.size["3xl"],
+    },
     color: theme.colors.textOnPrimary,
     letterSpacing: -0.84,
   },
@@ -150,7 +175,10 @@ const styles = StyleSheet.create((theme) => ({
   clearBtn: {
     backgroundColor: theme.colors.sidebarControl,
     borderRadius: theme.radii.md,
-    padding: 11,
+    padding: {
+      xs: 8,
+      md: 11,
+    },
   },
   clearLabel: {
     fontFamily: theme.typography.fontFamily.body,
@@ -158,9 +186,10 @@ const styles = StyleSheet.create((theme) => ({
     color: theme.colors.textOnPrimary,
   },
 
-  /* Order type pills */
+  /* Order type pills — flex-wrap prevents overflow on tight widths */
   orderTypes: {
     flexDirection: "row",
+    flexWrap: "wrap",
     gap: 8,
   },
 
@@ -169,15 +198,24 @@ const styles = StyleSheet.create((theme) => ({
     flex: 1,
   },
   itemsContent: {
-    gap: 10,
+    gap: {
+      xs: 8,
+      md: 10,
+    },
   },
   cartItem: {
     backgroundColor: theme.colors.sidebarCard,
     borderWidth: 1.17,
     borderColor: theme.colors.sidebarBorder,
     borderRadius: theme.radii.lg,
-    paddingHorizontal: 15,
-    paddingVertical: 12,
+    paddingHorizontal: {
+      xs: 10,
+      md: 15,
+    },
+    paddingVertical: {
+      xs: 10,
+      md: 12,
+    },
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
@@ -185,6 +223,7 @@ const styles = StyleSheet.create((theme) => ({
   cartItemInfo: {
     flex: 1,
     gap: 2,
+    marginRight: 8,
   },
   cartItemName: {
     fontFamily: theme.typography.fontFamily.body,
@@ -200,7 +239,10 @@ const styles = StyleSheet.create((theme) => ({
   qtyControls: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 8,
+    gap: {
+      xs: 6,
+      md: 8,
+    },
   },
   qtyBtn: {
     width: 28,
@@ -223,22 +265,32 @@ const styles = StyleSheet.create((theme) => ({
     textAlign: "center",
   },
 
-  /* Actions row */
+  /* Actions row — wraps on tight widths */
   actions: {
     flexDirection: "row",
-    gap: 8,
+    flexWrap: "wrap",
+    gap: {
+      xs: 6,
+      md: 8,
+    },
   },
   actionBtn: {
     flex: 1,
-    minWidth: 0,
+    minWidth: 70,
   },
 
   /* Totals section */
   totals: {
     borderTopWidth: 1.17,
     borderTopColor: theme.colors.sidebarBorder,
-    paddingTop: 17,
-    gap: 10,
+    paddingTop: {
+      xs: 12,
+      md: 17,
+    },
+    gap: {
+      xs: 8,
+      md: 10,
+    },
   },
   totalRow: {
     flexDirection: "row",
