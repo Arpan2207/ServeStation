@@ -25,8 +25,8 @@ const CATEGORIES = [
 
 const MENU_ITEMS = [
   { label: "Orders", route: "/orders" as const },
-  { label: "Admin", route: undefined },
-  { label: "Settings", route: undefined },
+  { label: "Admin", route: "/admin" as const },
+  { label: "Settings", route: "/settings" as const },
 ];
 
 export function CategoryBar() {
