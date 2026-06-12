@@ -1,80 +1,34 @@
 /**
- * Orders List screen — Figma-aligned compact queue view.
- * The screen intentionally uses static/mock rows only and mirrors the
- * MCP reference layout: cream rounded frame, header actions, tabs/search row,
- * and four large rounded order rows.
+ * Orders List screen — Figma node 186:2 (revised).
+ * Design update: no subtitle; the row pill shows the destination colored by
+ * order type, and the title reads "#<number> · <customer>".
+ *
+ * Interactive (frontend-only): Open/Closed tabs, live search, and row press
+ * that navigates to the detail screen with the order id as a route param.
  */
 
 import React from "react";
-import { ScrollView, Text, View } from "react-native";
+import { Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { useRouter } from "expo-router";
 import { StyleSheet } from "react-native-unistyles";
 
-import { Chip } from "@/components/ui/Chip";
 import { Screen } from "@/components/ui/Screen";
-import { OrderRow, OrderRowData } from "./OrderRow";
-
-/* ── Mock order data matched to the Figma screenshot ─── */
-
-const ORDERS: OrderRowData[] = [
-  {
-    id: "1",
-    orderNumber: "1042",
-    destination: "Table 14",
-    statusLabel: "Preparing",
-    statusTone: "preparing",
-    items: 3,
-    meta: "3 items · dine-in · Jordan · created 2 min ago",
-    total: "$43.60",
-  },
-  {
-    id: "2",
-    orderNumber: "1041",
-    destination: "Pickup",
-    statusLabel: "Ready soon",
-    statusTone: "ready",
-    items: 2,
-    meta: "2 items · ready soon · Mina · created 7 min ago",
-    total: "$19.20",
-  },
-  {
-    id: "3",
-    orderNumber: "1038",
-    destination: "Delivery",
-    statusLabel: "Closed",
-    statusTone: "closed",
-    items: 4,
-    meta: "4 items · closed · Samir · completed 14 min ago",
-    total: "$51.80",
-  },
-  {
-    id: "4",
-    orderNumber: "1035",
-    destination: "Counter",
-    statusLabel: "Preparing",
-    statusTone: "preparing",
-    items: 1,
-    meta: "1 item · dine-in · Aria · created 18 min ago",
-    total: "$8.40",
-  },
-];
+import { useOrdersState } from "@/hooks/useOrdersState";
+import { OrderRow } from "./OrderRow";
 
 /* ── Component ───────────────────────────────────────── */
 
 export function OrdersListScreen() {
   const router = useRouter();
+  const orders = useOrdersState();
 
   return (
     <Screen>
       <View style={styles.screen}>
         <View style={styles.frame}>
+          {/* Header — title + actions, no subtitle */}
           <View style={styles.header}>
-            <View style={styles.headerText}>
-              <Text style={styles.title}>Orders</Text>
-              <Text style={styles.subtitle}>
-                A dedicated queue with longer order rows for faster scanning.
-              </Text>
-            </View>
+            <Text style={styles.title}>Orders</Text>
 
             <View style={styles.headerActions}>
               <View style={styles.filterButton}>
@@ -86,26 +40,78 @@ export function OrdersListScreen() {
             </View>
           </View>
 
+          {/* Top bar — tabs + search */}
           <View style={styles.controls}>
-            <Chip label="Open orders" active={false} style={styles.tabChip} />
-            <Chip label="Closed orders" active={false} style={styles.tabChip} />
+            <Pressable
+              style={[
+                styles.tab,
+                orders.tab === "open" && styles.tabActive,
+              ]}
+              onPress={() => orders.setTab("open")}
+            >
+              <Text
+                style={[
+                  styles.tabLabel,
+                  orders.tab === "open" && styles.tabLabelActive,
+                ]}
+              >
+                Open orders
+              </Text>
+            </Pressable>
+            <Pressable
+              style={[
+                styles.tab,
+                orders.tab === "closed" && styles.tabActive,
+              ]}
+              onPress={() => orders.setTab("closed")}
+            >
+              <Text
+                style={[
+                  styles.tabLabel,
+                  orders.tab === "closed" && styles.tabLabelActive,
+                ]}
+              >
+                Closed orders
+              </Text>
+            </Pressable>
+
             <View style={styles.searchBar}>
-              <Text style={styles.searchText}>Search by order ID or customer...</Text>
+              <TextInput
+                style={styles.searchInput}
+                value={orders.searchText}
+                onChangeText={orders.setSearchText}
+                placeholder="Search by order ID or customer…"
+                placeholderTextColor={styles.searchPlaceholder.color}
+              />
             </View>
           </View>
 
+          {/* List body */}
           <ScrollView
             style={styles.list}
             contentContainerStyle={styles.listContent}
             showsVerticalScrollIndicator={false}
           >
-            {ORDERS.map((order) => (
-              <OrderRow
-                key={order.id}
-                order={order}
-                onPress={() => router.push("/orders/detail" as any)}
-              />
-            ))}
+            {orders.filteredOrders.length === 0 ? (
+              <View style={styles.emptyState}>
+                <Text style={styles.emptyText}>
+                  No {orders.tab} orders match your search.
+                </Text>
+              </View>
+            ) : (
+              orders.filteredOrders.map((order) => (
+                <OrderRow
+                  key={order.id}
+                  order={order}
+                  onPress={() =>
+                    router.push({
+                      pathname: "/orders/detail",
+                      params: { id: order.id },
+                    } as any)
+                  }
+                />
+              ))
+            )}
           </ScrollView>
         </View>
       </View>
@@ -136,17 +142,11 @@ const styles = StyleSheet.create((theme) => ({
   },
   header: {
     width: "100%",
-    height: 62,
+    height: 48,
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
     gap: 18,
-    overflow: "hidden",
-  },
-  headerText: {
-    flex: 1,
-    minWidth: 0,
-    gap: 6,
     overflow: "hidden",
   },
   title: {
@@ -156,17 +156,11 @@ const styles = StyleSheet.create((theme) => ({
     color: theme.colors.textPrimary,
     fontWeight: "700",
   },
-  subtitle: {
-    fontFamily: theme.typography.fontFamily.label,
-    fontSize: 16,
-    lineHeight: 22,
-    color: theme.colors.icon,
-  },
   headerActions: {
     flexDirection: "row",
     alignItems: "flex-start",
     gap: 10,
-    height: 50,
+    height: 48,
     overflow: "hidden",
   },
   filterButton: {
@@ -174,7 +168,7 @@ const styles = StyleSheet.create((theme) => ({
     height: 42,
     paddingHorizontal: 16,
     paddingVertical: 11,
-    borderRadius: theme.radii.lg,
+    borderRadius: 16,
     backgroundColor: theme.colors.surfaceMuted,
     alignItems: "center",
     justifyContent: "center",
@@ -191,7 +185,7 @@ const styles = StyleSheet.create((theme) => ({
     height: 42,
     paddingHorizontal: 16,
     paddingVertical: 11,
-    borderRadius: theme.radii.lg,
+    borderRadius: 16,
     backgroundColor: theme.colors.primary,
     alignItems: "center",
     justifyContent: "center",
@@ -203,36 +197,60 @@ const styles = StyleSheet.create((theme) => ({
     color: theme.colors.textOnPrimary,
     fontWeight: "600",
   },
+
+  /* Top bar — tabs + search */
   controls: {
     width: "100%",
-    height: 49,
+    height: 45,
     flexDirection: "row",
     alignItems: "center",
     gap: 12,
     overflow: "hidden",
   },
-  tabChip: {
+  tab: {
     height: 42,
-    paddingVertical: 11,
     paddingHorizontal: 16,
-    borderRadius: theme.radii.lg,
+    paddingVertical: 11,
+    borderRadius: 16,
+    backgroundColor: theme.colors.surfaceMuted,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  tabActive: {
+    backgroundColor: theme.colors.primary,
+  },
+  tabLabel: {
+    fontFamily: theme.typography.fontFamily.label,
+    fontSize: 14,
+    lineHeight: 20,
+    color: theme.colors.textPrimary,
+    fontWeight: "600",
+  },
+  tabLabelActive: {
+    color: theme.colors.textOnPrimary,
   },
   searchBar: {
     flex: 1,
     minWidth: 0,
     height: 42,
-    borderRadius: theme.radii.lg,
+    borderRadius: 16,
     backgroundColor: theme.colors.surfaceMuted,
     justifyContent: "center",
     paddingHorizontal: 16,
     overflow: "hidden",
   },
-  searchText: {
+  searchInput: {
     fontFamily: theme.typography.fontFamily.label,
     fontSize: 14,
     lineHeight: 20,
+    color: theme.colors.textPrimary,
+    padding: 0,
+  },
+  searchPlaceholder: {
     color: theme.colors.icon,
   },
+
+  /* List */
   list: {
     flex: 1,
     width: "100%",
@@ -240,5 +258,16 @@ const styles = StyleSheet.create((theme) => ({
   },
   listContent: {
     gap: 14,
+    paddingBottom: 14,
+  },
+  emptyState: {
+    paddingVertical: 48,
+    alignItems: "center",
+  },
+  emptyText: {
+    fontFamily: theme.typography.fontFamily.label,
+    fontSize: 16,
+    lineHeight: 22,
+    color: theme.colors.icon,
   },
 }));

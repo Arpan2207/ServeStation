@@ -1,57 +1,59 @@
 /**
- * A single Figma-aligned order row shown in the Orders List.
- * The row keeps the original mockup structure: status pill at the top,
- * order destination below, compact meta text, and total aligned right.
+ * A single Figma-aligned order row shown in the Orders List (node 186:2).
+ * Updated design: the top pill shows the order destination (e.g. "Table 14",
+ * "Pickup", "Delivery") colored by order type, the title reads
+ * "#<number> · <customer>", and a compact meta line sits below.
  */
 
 import React from "react";
 import { Pressable, Text, View } from "react-native";
 import { StyleSheet } from "react-native-unistyles";
 
-export interface OrderRowData {
-  id: string;
-  orderNumber: string;
-  destination: string;
-  statusLabel: string;
-  statusTone: "preparing" | "ready" | "closed";
-  meta: string;
-  items: number;
-  total: string;
-}
+import { buildOrderMeta } from "@/lib/mockOrderData";
+import type { Order } from "@/types/orders";
 
 interface OrderRowProps {
-  order: OrderRowData;
+  order: Order;
+  /** Whether this row is the currently selected one (subtle highlight). */
+  selected?: boolean;
   onPress?: () => void;
 }
 
-export function OrderRow({ order, onPress }: OrderRowProps) {
+/**
+ * Presentational order row.
+ * @param props The order to render, optional selected state, and press handler.
+ */
+export function OrderRow({ order, selected, onPress }: OrderRowProps) {
   const Wrapper = onPress ? Pressable : View;
   return (
-    <Wrapper style={styles.row} onPress={onPress}>
+    <Wrapper
+      style={[styles.row, selected && styles.rowSelected]}
+      onPress={onPress}
+    >
       <View style={styles.inner}>
         <View style={styles.content}>
           <View
             style={[
-              styles.statusPill,
-              order.statusTone === "ready" && styles.readyPill,
-              order.statusTone === "closed" && styles.closedPill,
+              styles.pill,
+              order.orderType === "pickup" && styles.pillPickup,
+              order.orderType === "delivery" && styles.pillDelivery,
             ]}
           >
             <Text
               style={[
-                styles.statusText,
-                order.statusTone === "ready" && styles.readyText,
-                order.statusTone === "closed" && styles.closedText,
+                styles.pillText,
+                order.orderType === "pickup" && styles.pillTextPickup,
+                order.orderType === "delivery" && styles.pillTextDelivery,
               ]}
             >
-              {order.statusLabel}
+              {order.destination}
             </Text>
           </View>
 
           <Text style={styles.orderTitle}>
-            #{order.orderNumber} · {order.destination}
+            #{order.orderNumber} · {order.customer}
           </Text>
-          <Text style={styles.meta}>{order.meta}</Text>
+          <Text style={styles.meta}>{buildOrderMeta(order)}</Text>
         </View>
 
         <Text style={styles.total}>{order.total}</Text>
@@ -69,6 +71,10 @@ const styles = StyleSheet.create((theme) => ({
     backgroundColor: theme.colors.surfaceWarm,
     overflow: "hidden",
   },
+  rowSelected: {
+    borderWidth: 1.5,
+    borderColor: theme.colors.primary,
+  },
   inner: {
     flex: 1,
     height: 100,
@@ -83,31 +89,34 @@ const styles = StyleSheet.create((theme) => ({
     alignItems: "flex-start",
     gap: 10,
   },
-  statusPill: {
+
+  /* Destination pill — default (dine-in) is orange */
+  pill: {
     borderRadius: 999,
-    backgroundColor: theme.colors.primaryLight,
+    backgroundColor: theme.colors.primaryLighter,
     paddingHorizontal: 12,
     paddingVertical: 8,
   },
-  readyPill: {
+  pillPickup: {
     backgroundColor: "#deeaff",
   },
-  closedPill: {
-    backgroundColor: "#daf3e4",
+  pillDelivery: {
+    backgroundColor: "#e9e2ff",
   },
-  statusText: {
+  pillText: {
     fontFamily: theme.typography.fontFamily.label,
     fontSize: 12,
     lineHeight: 16,
     color: theme.colors.primary,
     fontWeight: "600",
   },
-  readyText: {
+  pillTextPickup: {
     color: "#346aff",
   },
-  closedText: {
-    color: "#057542",
+  pillTextDelivery: {
+    color: "#6a3bff",
   },
+
   orderTitle: {
     fontFamily: theme.typography.fontFamily.label,
     fontSize: 18,

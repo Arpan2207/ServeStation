@@ -1,33 +1,50 @@
 # Kioskable
 
-Kioskable is a tablet-first POS app built with Expo React Native and TypeScript.
+Kioskable is a tablet-first POS interface built with Expo, React Native, TypeScript, and `react-native-unistyles`.
 
-## Development Workflow
+It is designed for landscape kiosk and counter workflows, with a UI that prioritizes fast product selection, order review, and operational control on larger touch devices.
 
-This project uses `react-native-unistyles` v3, so it runs in an Expo development build instead of Expo Go.
+## Overview
 
-Use this for normal UI and TypeScript work:
+The app currently includes multiple UI surfaces for a modern restaurant or retail ordering flow:
 
-```powershell
-npm run dev
-```
+- Home POS screen with category browsing, product grid, selected item editor, upsells, and cart panel
+- Orders workspace with open/closed tabs, search, and order detail drill-in
+- Admin workspace for categories, item browsing, and menu editing flows
+- Settings surfaces for UI and app configuration work
 
-Use this when the app is not installed on the emulator, after deleting it, or after native dependency/config changes:
+## Tech Stack
 
-```powershell
-npm run android:dev
-```
+- Expo + React Native
+- TypeScript
+- Expo Router
+- React Navigation
+- `react-native-unistyles` for theming, tokens, and responsive styling
 
-If Metro cache acts stale:
+## Screenshots
 
-```powershell
-npm run dev:clear
-```
+<table>
+  <tr>
+    <td width="50%">
+      <img src="docs/screenshots/home-pos.png" alt="Home POS screen" />
+    </td>
+    <td width="50%">
+      <img src="docs/screenshots/orders-list.png" alt="Orders list screen" />
+    </td>
+  </tr>
+  <tr>
+    <td width="50%">
+      <img src="docs/screenshots/order-detail.png" alt="Order detail screen" />
+    </td>
+    <td width="50%">
+      <img src="docs/screenshots/admin-workspace.png" alt="Admin workspace screen" />
+    </td>
+  </tr>
+</table>
 
-For a clean native rebuild:
+## Documentation
 
-```powershell
-npm run android:clean
-```
-
-See [`docs/development-workflow.md`](docs/development-workflow.md) for the full workflow and Android SDK setup notes.
+- [`docs/development-workflow.md`](docs/development-workflow.md)
+- [`docs/ui-project-structure.md`](docs/ui-project-structure.md)
+- [`docs/ui-component-strategy.md`](docs/ui-component-strategy.md)
+- [`docs/phase-2-interactivity-plan.md`](docs/phase-2-interactivity-plan.md)

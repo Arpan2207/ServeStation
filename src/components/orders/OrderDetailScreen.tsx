@@ -3,33 +3,35 @@
  * Two-column layout: main column (order summary) and
  * a right support column (payment + notes & support + actions).
  *
- * All data is static/mock for the UI-only phase.
+ * The displayed order is resolved from the `id` route param via the shared
+ * mock data, falling back to the first order when no/unknown id is provided.
  */
 
 import React from "react";
 import { ScrollView, Text, View } from "react-native";
+import { useLocalSearchParams } from "expo-router";
 import { StyleSheet } from "react-native-unistyles";
 
 import { Screen } from "@/components/ui/Screen";
-
-/* ── Mock data matching MCP content ──────────────────── */
-
-interface LineItem {
-  label: string;
-  price: string;
-}
-
-const FOOD_ITEMS: LineItem[] = [
-  { label: "Smash Burger", price: "$13.50" },
-  { label: "Green Bowl ×2", price: "$23.50" },
-  { label: "Sparkling Citrus", price: "$3.00" },
-];
+import { getOrderById, ORDERS } from "@/lib/mockOrderData";
+import type { OrderType } from "@/types/orders";
 
 const SUPPORT_CHIPS = ["Allergy note", "VIP guest", "Call before handoff"] as const;
+
+/** Map an order type to its capitalized display label. */
+const ORDER_TYPE_LABEL: Record<OrderType, string> = {
+  "dine-in": "Dine-in",
+  pickup: "Pickup",
+  delivery: "Delivery",
+};
 
 /* ── Component ───────────────────────────────────────── */
 
 export function OrderDetailScreen() {
+  // Resolve the order from the route param, falling back to the first order.
+  const { id } = useLocalSearchParams<{ id?: string }>();
+  const order = getOrderById(id) ?? ORDERS[0];
+
   return (
     <Screen>
       <View style={styles.screen}>
@@ -47,18 +49,21 @@ export function OrderDetailScreen() {
                 {/* Summary header */}
                 <View style={styles.summaryHeader}>
                   <View style={styles.summaryInfo}>
-                    <Text style={styles.orderHeading}>Order #1042</Text>
+                    <Text style={styles.orderHeading}>
+                      Order #{order.orderNumber}
+                    </Text>
                     <Text style={styles.orderMeta}>
-                      Dine-in · Table 14 · Jordan
+                      {ORDER_TYPE_LABEL[order.orderType]} · {order.destination} ·{" "}
+                      {order.customer}
                     </Text>
                   </View>
                   <View style={styles.statusPill}>
-                    <Text style={styles.statusText}>Preparing</Text>
+                    <Text style={styles.statusText}>{order.statusLabel}</Text>
                   </View>
                 </View>
 
                 {/* Food line items */}
-                {FOOD_ITEMS.map((item) => (
+                {order.lineItems.map((item) => (
                   <View key={item.label} style={styles.lineRow}>
                     <Text style={styles.lineLabel}>{item.label}</Text>
                     <Text style={styles.linePrice}>{item.price}</Text>
@@ -71,11 +76,11 @@ export function OrderDetailScreen() {
                 {/* Tax and Total pinned to the bottom */}
                 <View style={styles.lineRow}>
                   <Text style={styles.lineLabel}>Tax</Text>
-                  <Text style={styles.linePrice}>$3.60</Text>
+                  <Text style={styles.linePrice}>{order.tax}</Text>
                 </View>
                 <View style={styles.totalRow}>
                   <Text style={styles.totalLabel}>Total</Text>
-                  <Text style={styles.totalPrice}>$43.60</Text>
+                  <Text style={styles.totalPrice}>{order.total}</Text>
                 </View>
               </View>
             </View>
@@ -89,8 +94,8 @@ export function OrderDetailScreen() {
               {/* Payment card */}
               <View style={styles.sideCard}>
                 <Text style={styles.cardTitle}>Payment</Text>
-                <Text style={styles.sideBody}>Pending cash collection</Text>
-                <Text style={styles.sideBody}>Estimated prep: 8 min</Text>
+                <Text style={styles.sideBody}>{order.payment}</Text>
+                <Text style={styles.sideBody}>{order.prepTime}</Text>
               </View>
 
               {/* Notes & support card */}
