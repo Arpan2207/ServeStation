@@ -1,0 +1,14 @@
+---
+description: Responsive screen patterns for Expo React Native tablet layouts
+globs: src/**/*.tsx
+alwaysApply: false
+---
+
+# Responsive RN Screens
+
+- Design screens tablet-first, especially for POS, orders, admin, and settings flows.
+- Prefer split-pane layouts, flexible columns, and scrollable sections over hardcoded one-device sizing.
+- Use Unistyles breakpoints or orientation-aware rules for layout changes; avoid manual width checks scattered across components.
+- Keep main layout containers responsive and let leaf controls stay fixed only when it improves usability.
+- Preserve touch-friendly sizing: action controls should remain easy to tap on 7-13 inch tablets.
+- Reuse shared UI primitives before creating screen-specific styling from scratch.

@@ -1,38 +1,30 @@
 /**
- * Bottom-left panel showing the currently-selected menu item.
- * Driven entirely by local POS state: it reflects the selected item, lets the
- * user toggle that item's modifiers, and adds the configured item to the cart.
- * When nothing is selected it renders a stable empty state so the layout holds.
+ * Bottom-left panel showing the currently-selected menu item
+ * (Figma "Article3", node 153:131). It displays the item name + description
+ * and an action row with an "Add note" button beside the "Add to order"
+ * button. Modifier toggles now live in the adjacent UpsellGrid (the Figma
+ * "Upsell Column"). When nothing is selected it renders a stable empty state
+ * so the bottom-editor layout holds.
  */
 
 import React from "react";
 import { Pressable, Text, View } from "react-native";
 import { StyleSheet } from "react-native-unistyles";
 import { Card } from "@/components/ui/Card";
-import { formatCurrency } from "@/lib/mockData";
 import type { MenuItem } from "@/types/pos";
 
 interface SelectedItemPanelProps {
   /** The currently selected item, or null when nothing is selected. */
   item: MenuItem | null;
-  /** Ids of the modifiers currently toggled on for the selected item. */
-  selectedModifierIds: string[];
-  /** Toggle a modifier on/off by id. */
-  onToggleModifier: (modifierId: string) => void;
   /** Add the selected item (with its modifiers) to the cart. */
   onAddToCart: () => void;
 }
 
 /**
- * Selected-item editor panel with modifier toggles and an add-to-cart action.
- * @param props Selected item, modifier selection, and the change handlers.
+ * Selected-item panel with an "Add note" / "Add to order" action row.
+ * @param props The selected item and the add-to-cart handler.
  */
-export function SelectedItemPanel({
-  item,
-  selectedModifierIds,
-  onToggleModifier,
-  onAddToCart,
-}: SelectedItemPanelProps) {
+export function SelectedItemPanel({ item, onAddToCart }: SelectedItemPanelProps) {
   // Empty state — keeps the panel height stable when no item is selected.
   if (!item) {
     return (
@@ -47,41 +39,23 @@ export function SelectedItemPanel({
 
   return (
     <Card variant="warm" style={styles.card}>
-      <View style={styles.headerRow}>
-        <View style={styles.headerCopy}>
-          <Text style={styles.title} numberOfLines={1}>
-            Selected item: {item.name}
-          </Text>
-          <Text style={styles.description} numberOfLines={2}>
-            {item.description}
-          </Text>
-        </View>
-        <Pressable style={styles.addButton} onPress={onAddToCart}>
+      <Text style={styles.title} numberOfLines={1}>
+        Selected item: {item.name}
+      </Text>
+      <Text style={styles.description} numberOfLines={2}>
+        {item.description}
+      </Text>
+
+      {/* Action row — "Add note" sits beside the kept "Add to order" button.
+          Both share identical sizing (button base) with a consistent gap. */}
+      <View style={styles.actions}>
+        <Pressable style={[styles.button, styles.noteButton]}>
+          <Text style={styles.noteLabel}>Add note</Text>
+        </Pressable>
+        <Pressable style={[styles.button, styles.addButton]} onPress={onAddToCart}>
           <Text style={styles.addLabel}>Add to order</Text>
         </Pressable>
       </View>
-
-      {item.modifiers.length > 0 && (
-        <View style={styles.modifiers}>
-          {item.modifiers.map((mod) => {
-            const active = selectedModifierIds.includes(mod.id);
-            return (
-              <Pressable
-                key={mod.id}
-                style={[styles.chip, active && styles.chipActive]}
-                onPress={() => onToggleModifier(mod.id)}
-              >
-                {/* Coloured left section mimicking the Figma toggle visual */}
-                <View style={[styles.chipToggle, active && styles.chipToggleActive]} />
-                <Text style={styles.chipLabel}>
-                  {mod.label}
-                  {mod.priceDelta > 0 ? ` +${formatCurrency(mod.priceDelta)}` : ""}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </View>
-      )}
     </Card>
   );
 }
@@ -91,17 +65,6 @@ const styles = StyleSheet.create((theme) => ({
     flex: 1,
     paddingHorizontal: 17,
     gap: 8,
-  },
-  headerRow: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    justifyContent: "space-between",
-    gap: 12,
-  },
-  headerCopy: {
-    flex: 1,
-    minWidth: 0,
-    gap: 4,
   },
   title: {
     fontFamily: theme.typography.fontFamily.body,
@@ -115,50 +78,41 @@ const styles = StyleSheet.create((theme) => ({
     lineHeight: 19,
     color: theme.colors.textPrimary,
   },
+  // Push the action row to the bottom of the card, matching the Figma layout.
+  actions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    marginTop: "auto",
+  },
+  // Shared base so both action buttons are exactly the same size.
+  // Equal flex width + fixed height + matching border keep them identical.
+  button: {
+    flex: 1,
+    minWidth: 0,
+    height: 40,
+    borderRadius: theme.radii.lg,
+    borderWidth: 1,
+    paddingHorizontal: 14,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  noteButton: {
+    backgroundColor: theme.colors.white,
+    borderColor: theme.colors.borderSubtle,
+  },
+  noteLabel: {
+    fontFamily: theme.typography.fontFamily.body,
+    fontSize: theme.typography.size.sm,
+    color: theme.colors.textPrimary,
+  },
   addButton: {
     backgroundColor: theme.colors.primary,
-    borderRadius: theme.radii.lg,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
+    borderColor: theme.colors.primary,
   },
   addLabel: {
     fontFamily: theme.typography.fontFamily.body,
     fontSize: theme.typography.size.sm,
     color: theme.colors.textOnPrimary,
-  },
-  modifiers: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 8,
-  },
-  chip: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: theme.colors.white,
-    borderRadius: theme.radii.md,
-    borderWidth: 1.17,
-    borderColor: theme.colors.borderSubtle,
-    height: 34,
-    overflow: "hidden",
-  },
-  chipActive: {
-    borderColor: theme.colors.primary,
-  },
-  chipToggle: {
-    width: 28,
-    height: 34,
-    borderRadius: theme.radii.md,
-    borderWidth: 1.17,
-    borderColor: theme.colors.borderSubtle,
-  },
-  chipToggleActive: {
-    backgroundColor: theme.colors.primary,
-    borderColor: theme.colors.primary,
-  },
-  chipLabel: {
-    fontFamily: theme.typography.fontFamily.body,
-    fontSize: theme.typography.size.sm,
-    color: theme.colors.textPrimary,
-    paddingHorizontal: 12,
   },
 }));

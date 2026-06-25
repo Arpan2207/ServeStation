@@ -18,7 +18,6 @@ import type { MenuCategory } from "@/types/pos";
 /** Navigation targets available from the three-dot menu. */
 const NAV_ITEMS = [
   { label: "Orders", route: "/orders" as const },
-  { label: "Admin", route: "/admin" as const },
   { label: "Settings", route: "/settings" as const },
 ];
 

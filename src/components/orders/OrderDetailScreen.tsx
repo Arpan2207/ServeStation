@@ -7,9 +7,9 @@
  * mock data, falling back to the first order when no/unknown id is provided.
  */
 
-import React from "react";
-import { ScrollView, Text, View } from "react-native";
-import { useLocalSearchParams } from "expo-router";
+import React, { useState } from "react";
+import { Pressable, ScrollView, Text, View } from "react-native";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { StyleSheet } from "react-native-unistyles";
 
 import { Screen } from "@/components/ui/Screen";
@@ -17,6 +17,13 @@ import { getOrderById, ORDERS } from "@/lib/mockOrderData";
 import type { OrderType } from "@/types/orders";
 
 const SUPPORT_CHIPS = ["Allergy note", "VIP guest", "Call before handoff"] as const;
+
+/** Actions available on the order, each with the feedback it surfaces. */
+const ACTIONS = [
+  { label: "Print ticket", feedback: "Ticket sent to printer.", primary: true },
+  { label: "Print receipt", feedback: "Receipt printed.", primary: false },
+  { label: "Issue refund", feedback: "Refund issued (simulated).", primary: false },
+] as const;
 
 /** Map an order type to its capitalized display label. */
 const ORDER_TYPE_LABEL: Record<OrderType, string> = {
@@ -31,13 +38,30 @@ export function OrderDetailScreen() {
   // Resolve the order from the route param, falling back to the first order.
   const { id } = useLocalSearchParams<{ id?: string }>();
   const order = getOrderById(id) ?? ORDERS[0];
+  const router = useRouter();
+
+  // Local, frontend-only interaction state.
+  const [selectedChips, setSelectedChips] = useState<string[]>([
+    SUPPORT_CHIPS[0],
+  ]);
+  const [actionFeedback, setActionFeedback] = useState<string | null>(null);
+
+  /** Toggle a support chip on/off. */
+  function toggleChip(chip: string) {
+    setSelectedChips((prev) =>
+      prev.includes(chip) ? prev.filter((c) => c !== chip) : [...prev, chip]
+    );
+  }
 
   return (
     <Screen>
       <View style={styles.screen}>
         <View style={styles.frame}>
-          {/* Header — title only, no subtitle */}
+          {/* Header — back button + title */}
           <View style={styles.header}>
+            <Pressable style={styles.backButton} onPress={() => router.back()}>
+              <Text style={styles.backLabel}>‹ Back</Text>
+            </Pressable>
             <Text style={styles.title}>Order detail</Text>
           </View>
 
@@ -106,21 +130,25 @@ export function OrderDetailScreen() {
                   pickup instructions.
                 </Text>
                 <View style={styles.chipsRow}>
-                  {SUPPORT_CHIPS.map((chip, i) => (
-                    <View
-                      key={chip}
-                      style={[styles.chip, i === 0 && styles.chipHighlight]}
-                    >
-                      <Text
-                        style={[
-                          styles.chipText,
-                          i === 0 && styles.chipTextHighlight,
-                        ]}
+                  {SUPPORT_CHIPS.map((chip) => {
+                    const active = selectedChips.includes(chip);
+                    return (
+                      <Pressable
+                        key={chip}
+                        style={[styles.chip, active && styles.chipHighlight]}
+                        onPress={() => toggleChip(chip)}
                       >
-                        {chip}
-                      </Text>
-                    </View>
-                  ))}
+                        <Text
+                          style={[
+                            styles.chipText,
+                            active && styles.chipTextHighlight,
+                          ]}
+                        >
+                          {chip}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
                 </View>
               </View>
 
@@ -128,16 +156,29 @@ export function OrderDetailScreen() {
               <View style={styles.actionsCard}>
                 <Text style={styles.cardTitle}>Actions</Text>
                 <View style={styles.actionRow}>
-                  <View style={styles.actionPrimary}>
-                    <Text style={styles.actionPrimaryLabel}>Print ticket</Text>
-                  </View>
-                  <View style={styles.actionSecondary}>
-                    <Text style={styles.actionSecondaryLabel}>Print receipt</Text>
-                  </View>
-                  <View style={styles.actionSecondary}>
-                    <Text style={styles.actionSecondaryLabel}>Issue refund</Text>
-                  </View>
+                  {ACTIONS.map((action) => (
+                    <Pressable
+                      key={action.label}
+                      style={action.primary ? styles.actionPrimary : styles.actionSecondary}
+                      onPress={() => setActionFeedback(action.feedback)}
+                    >
+                      <Text
+                        style={
+                          action.primary
+                            ? styles.actionPrimaryLabel
+                            : styles.actionSecondaryLabel
+                        }
+                      >
+                        {action.label}
+                      </Text>
+                    </Pressable>
+                  ))}
                 </View>
+
+                {/* Local feedback for the last action performed */}
+                {actionFeedback && (
+                  <Text style={styles.actionFeedback}>{actionFeedback}</Text>
+                )}
               </View>
             </ScrollView>
           </View>
@@ -169,11 +210,28 @@ const styles = StyleSheet.create((theme) => ({
     overflow: "hidden",
   },
 
-  /* Header — compact, no subtitle */
+  /* Header — back button + title */
   header: {
     width: "100%",
-    justifyContent: "center",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
     overflow: "hidden",
+  },
+  backButton: {
+    height: 36,
+    borderRadius: 14,
+    backgroundColor: theme.colors.surfaceMuted,
+    paddingHorizontal: 14,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  backLabel: {
+    fontFamily: theme.typography.fontFamily.label,
+    fontSize: 14,
+    lineHeight: 20,
+    color: theme.colors.textPrimary,
+    fontWeight: "600",
   },
   title: {
     fontFamily: theme.typography.fontFamily.label,
@@ -335,6 +393,13 @@ const styles = StyleSheet.create((theme) => ({
     fontSize: 14,
     lineHeight: 20,
     color: theme.colors.textPrimary,
+    fontWeight: "600",
+  },
+  actionFeedback: {
+    fontFamily: theme.typography.fontFamily.label,
+    fontSize: 13,
+    lineHeight: 18,
+    color: theme.colors.textAccent,
     fontWeight: "600",
   },
 

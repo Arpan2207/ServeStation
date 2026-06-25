@@ -131,7 +131,11 @@ export function MainSettingsScreen() {
             </View>
 
             {/* Bottom: full-width admin card */}
-            <SettingsCard card={ADMIN_CARD} wide={true} />
+            <SettingsCard
+              card={ADMIN_CARD}
+              wide={true}
+              onPress={() => router.push("/admin" as any)}
+            />
           </ScrollView>
         </View>
       </View>

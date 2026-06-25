@@ -15,8 +15,8 @@ import { StyleSheet } from "react-native-unistyles";
 
 import { Screen } from "@/components/ui/Screen";
 import { HStack } from "@/components/ui/Stack";
-import { CATEGORIES, formatCurrency } from "@/lib/mockData";
 import { usePosState } from "@/hooks/usePosState";
+import { CATEGORIES, formatCurrency } from "@/lib/mockData";
 import type { MenuItem } from "@/types/pos";
 import { CartPanel } from "./CartPanel";
 import { CategoryBar } from "./CategoryBar";
@@ -114,11 +114,13 @@ export function HomePosScreen() {
           >
             <SelectedItemPanel
               item={pos.selectedItem}
-              selectedModifierIds={pos.selectedModifierIds}
-              onToggleModifier={pos.toggleModifier}
               onAddToCart={pos.addSelectedToCart}
             />
-            <UpsellGrid />
+            <UpsellGrid
+              modifiers={pos.selectedItem?.modifiers ?? []}
+              selectedModifierIds={pos.selectedModifierIds}
+              onToggleModifier={pos.toggleModifier}
+            />
           </View>
         </View>
 
@@ -168,11 +170,16 @@ const styles = StyleSheet.create((theme) => ({
       md: 12,
     },
   },
+  // Warm container (Figma "Bottom Editor", #f7f0e4) that spans the full width
+  // so its light background sits behind both the left panel and the pills.
   bottomEditor: {
     flexDirection: "row",
     gap: 12,
     overflow: "hidden",
     minHeight: 140,
+    backgroundColor: theme.colors.surfaceWarm,
+    borderRadius: theme.radii["2xl"],
+    padding: 12,
   },
   bottomEditorStacked: {
     flexDirection: "column",

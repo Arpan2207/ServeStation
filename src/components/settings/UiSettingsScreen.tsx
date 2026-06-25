@@ -2,11 +2,15 @@
  * UI Settings screen — Figma MCP node 19:637.
  * Two-column layout: left controls (brand color, touch mode, layout density)
  * and a right live preview panel.
- * All data is static/mock for the UI-only phase.
+ *
+ * Interactive (frontend-only): brand color selection, a large-touch-mode
+ * toggle, and layout density selection. The live preview reflects the chosen
+ * brand color and density, and "Apply theme" surfaces local feedback.
+ * Nothing is persisted.
  */
 
-import React from "react";
-import { Text, View } from "react-native";
+import React, { useState } from "react";
+import { Pressable, Text, View } from "react-native";
 import { StyleSheet } from "react-native-unistyles";
 
 import { Screen } from "@/components/ui/Screen";
@@ -16,9 +20,29 @@ import { Screen } from "@/components/ui/Screen";
 const BRAND_COLORS = ["#ff7a1a", "#1f9d55", "#0f766e"] as const;
 const DENSITY_OPTIONS = ["Comfortable", "Balanced", "Compact"] as const;
 
+type Density = (typeof DENSITY_OPTIONS)[number];
+
+/** Preview inner gap per density, so the preview reacts to the selection. */
+const DENSITY_GAP: Record<Density, number> = {
+  Comfortable: 16,
+  Balanced: 12,
+  Compact: 8,
+};
+
 /* ── Component ───────────────────────────────────────── */
 
 export function UiSettingsScreen() {
+  // Local, frontend-only settings state.
+  const [brandColor, setBrandColor] = useState<string>(BRAND_COLORS[0]);
+  const [touchMode, setTouchMode] = useState<boolean>(true);
+  const [density, setDensity] = useState<Density>("Balanced");
+  const [applied, setApplied] = useState(false);
+
+  /** Apply theme: surface local confirmation (no persistence). */
+  function handleApply() {
+    setApplied(true);
+  }
+
   return (
     <Screen>
       <View style={styles.screen}>
@@ -26,9 +50,14 @@ export function UiSettingsScreen() {
           {/* Header */}
           <View style={styles.header}>
             <Text style={styles.title}>UI settings</Text>
-            <View style={styles.applyBtn}>
-              <Text style={styles.applyLabel}>Apply theme</Text>
-            </View>
+            <Pressable
+              style={[styles.applyBtn, { backgroundColor: brandColor }]}
+              onPress={handleApply}
+            >
+              <Text style={styles.applyLabel}>
+                {applied ? "Theme applied" : "Apply theme"}
+              </Text>
+            </Pressable>
           </View>
 
           {/* Content row */}
@@ -43,9 +72,17 @@ export function UiSettingsScreen() {
                 </Text>
                 <View style={styles.swatchRow}>
                   {BRAND_COLORS.map((color) => (
-                    <View
+                    <Pressable
                       key={color}
-                      style={[styles.swatch, { backgroundColor: color }]}
+                      onPress={() => {
+                        setBrandColor(color);
+                        setApplied(false);
+                      }}
+                      style={[
+                        styles.swatch,
+                        { backgroundColor: color },
+                        brandColor === color && styles.swatchSelected,
+                      ]}
                     />
                   ))}
                 </View>
@@ -58,8 +95,20 @@ export function UiSettingsScreen() {
                   Increase button heights and card padding for smaller tablets.
                 </Text>
                 <View style={styles.toggleRow}>
-                  <Text style={styles.toggleLabel}>Enabled</Text>
-                  <View style={styles.toggleTrack} />
+                  <Text style={styles.toggleLabel}>
+                    {touchMode ? "Enabled" : "Disabled"}
+                  </Text>
+                  <Pressable
+                    onPress={() => setTouchMode((v) => !v)}
+                    style={[
+                      styles.toggleTrack,
+                      touchMode
+                        ? { backgroundColor: brandColor, alignItems: "flex-end" }
+                        : styles.toggleTrackOff,
+                    ]}
+                  >
+                    <View style={styles.toggleKnob} />
+                  </Pressable>
                 </View>
               </View>
 
@@ -70,24 +119,28 @@ export function UiSettingsScreen() {
                   Fine-tune how much catalog content fits per screen.
                 </Text>
                 <View style={styles.densityRow}>
-                  {DENSITY_OPTIONS.map((option) => (
-                    <View
-                      key={option}
-                      style={[
-                        styles.densityPill,
-                        option === "Balanced" && styles.densityPillActive,
-                      ]}
-                    >
-                      <Text
+                  {DENSITY_OPTIONS.map((option) => {
+                    const active = option === density;
+                    return (
+                      <Pressable
+                        key={option}
+                        onPress={() => setDensity(option)}
                         style={[
-                          styles.densityText,
-                          option === "Balanced" && styles.densityTextActive,
+                          styles.densityPill,
+                          active && { backgroundColor: brandColor },
                         ]}
                       >
-                        {option}
-                      </Text>
-                    </View>
-                  ))}
+                        <Text
+                          style={[
+                            styles.densityText,
+                            active && styles.densityTextActive,
+                          ]}
+                        >
+                          {option}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
                 </View>
               </View>
             </View>
@@ -99,9 +152,22 @@ export function UiSettingsScreen() {
                 This preview mirrors the split POS layout at a smaller scale.
               </Text>
               <View style={styles.previewContainer}>
-                <View style={styles.previewRow}>
-                  <View style={styles.previewLeft} />
-                  <View style={styles.previewRight} />
+                <View style={[styles.previewRow, { gap: DENSITY_GAP[density] }]}>
+                  <View style={styles.previewLeft}>
+                    {/* Accent bar reflects the selected brand color */}
+                    <View
+                      style={[styles.previewAccent, { backgroundColor: brandColor }]}
+                    />
+                  </View>
+                  <View style={styles.previewRight}>
+                    <View
+                      style={[
+                        styles.previewCta,
+                        { backgroundColor: brandColor },
+                        touchMode && styles.previewCtaLarge,
+                      ]}
+                    />
+                  </View>
                 </View>
               </View>
             </View>
@@ -160,7 +226,7 @@ const styles = StyleSheet.create((theme) => ({
     color: "#5e584f",
   },
   applyBtn: {
-    width: 116,
+    minWidth: 116,
     height: 42,
     borderRadius: 16,
     backgroundColor: theme.colors.primary,
@@ -232,6 +298,10 @@ const styles = StyleSheet.create((theme) => ({
     borderWidth: 1,
     borderColor: theme.colors.borderSubtle,
   },
+  swatchSelected: {
+    borderWidth: 3,
+    borderColor: theme.colors.textPrimary,
+  },
 
   /* Toggle row */
   toggleRow: {
@@ -250,6 +320,18 @@ const styles = StyleSheet.create((theme) => ({
     height: 34,
     borderRadius: 999,
     backgroundColor: "#ffd1ab",
+    padding: 3,
+    justifyContent: "center",
+  },
+  toggleTrackOff: {
+    backgroundColor: "#d8d2c7",
+    alignItems: "flex-start",
+  },
+  toggleKnob: {
+    width: 28,
+    height: 28,
+    borderRadius: 999,
+    backgroundColor: theme.colors.white,
   },
 
   /* Density row */
@@ -267,9 +349,6 @@ const styles = StyleSheet.create((theme) => ({
     paddingVertical: 10,
     alignItems: "center",
     justifyContent: "center",
-  },
-  densityPillActive: {
-    backgroundColor: theme.colors.primary,
   },
   densityText: {
     fontFamily: theme.typography.fontFamily.label,
@@ -316,6 +395,12 @@ const styles = StyleSheet.create((theme) => ({
     backgroundColor: "#262626",
     borderWidth: 1,
     borderColor: "rgba(255,255,255,0.06)",
+    padding: 12,
+    justifyContent: "flex-end",
+  },
+  previewAccent: {
+    height: 12,
+    borderRadius: 6,
   },
   previewRight: {
     flex: 1,
@@ -323,5 +408,14 @@ const styles = StyleSheet.create((theme) => ({
     backgroundColor: "#1e1e1e",
     borderWidth: 1,
     borderColor: "rgba(255,255,255,0.08)",
+    padding: 12,
+    justifyContent: "flex-end",
+  },
+  previewCta: {
+    height: 18,
+    borderRadius: 9,
+  },
+  previewCtaLarge: {
+    height: 26,
   },
 }));
