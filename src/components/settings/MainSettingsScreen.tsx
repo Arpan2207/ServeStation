@@ -124,6 +124,8 @@ export function MainSettingsScreen() {
                   onPress={
                     card.title === "UI settings"
                       ? () => router.push("/settings/ui" as any)
+                      : card.title === "Profile settings"
+                        ? () => router.push("/settings/profile" as any)
                       : undefined
                   }
                 />
