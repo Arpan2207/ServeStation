@@ -1,6 +1,6 @@
 # UI Component Strategy
 
-Use a hybrid UI approach for `kioskable`:
+Use a hybrid UI approach for ServeStation:
 
 - Use `react-native-unistyles` for themes, tokens, breakpoints, and responsive styling.
 - Keep the visual UI aligned with the Figma designs. Behavior helpers are allowed, but the final look should still match Figma.

@@ -13,12 +13,12 @@ import { colors } from "@/theme/colors";
 
 const ACCOUNT_FIELDS = [
   { label: "Owner name", value: "Avery Stone" },
-  { label: "Email", value: "avery@kioskable.local" },
+  { label: "Email", value: "avery@servestation.local" },
   { label: "Phone", value: "(415) 555-0184" },
 ];
 
 const STORE_FIELDS = [
-  { label: "Business name", value: "Kioskable Coffee" },
+  { label: "Business name", value: "ServeStation Coffee" },
   { label: "Location", value: "Mission District, San Francisco" },
   { label: "Store ID", value: "KSK-1042" },
 ];
@@ -51,7 +51,7 @@ function FieldRow({ label, value }: { label: string; value: string }) {
 }
 
 /**
- * Wraps React Native's switch primitive with Kioskable profile-setting copy.
+ * Wraps React Native's switch primitive with ServeStation profile-setting copy.
  */
 function PreferenceToggle({
   label,
@@ -131,7 +131,7 @@ export function ProfileSettingsScreen() {
               </View>
               <View style={styles.profileCopy}>
                 <Text style={styles.profileName}>Avery Stone</Text>
-                <Text style={styles.profileMeta}>Owner account - Kioskable Coffee</Text>
+                <Text style={styles.profileMeta}>Owner account - ServeStation Coffee</Text>
               </View>
               <View style={styles.statusPill}>
                 <Text style={styles.statusText}>Verified</Text>

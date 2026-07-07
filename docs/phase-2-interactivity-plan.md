@@ -1,6 +1,6 @@
 # Phase 2 Interactivity Plan
 
-Phase 2 moves Kioskable from static mock screens to interactive frontend screens. The app should still stay local-only for now: no backend, no payments, no auth, no real persistence, and no kiosk-lock behavior.
+Phase 2 moves ServeStation from static mock screens to interactive frontend screens. The app should still stay local-only for now: no backend, no payments, no auth, no real persistence, and no kiosk-lock behavior.
 
 The goal is to make the screens feel like a working POS prototype while preserving the visual design already built from Figma.
 

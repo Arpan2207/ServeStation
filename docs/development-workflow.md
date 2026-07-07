@@ -1,6 +1,6 @@
 # Development Workflow
 
-Kioskable uses `react-native-unistyles` v3, which depends on native modules through Nitro Modules. Because of that, the app does not run in Expo Go. Use the installed Expo development build instead.
+ServeStation uses `react-native-unistyles` v3, which depends on native modules through Nitro Modules. Because of that, the app does not run in Expo Go. Use the installed Expo development build instead.
 
 ## Daily Workflow
 
@@ -10,7 +10,7 @@ Start Metro for the installed development build:
 npm run dev
 ```
 
-Then open the installed Kioskable app on the Android emulator. Normal changes in `src/` should Fast Refresh without rebuilding the native app.
+Then open the installed ServeStation app on the Android emulator. Normal changes in `src/` should Fast Refresh without rebuilding the native app.
 
 Use this flow for:
 

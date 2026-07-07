@@ -1,11 +1,11 @@
 {
   "expo": {
-    "name": "kioskable",
-    "slug": "kioskable",
+    "name": "ServeStation",
+    "slug": "servestation",
     "version": "1.0.0",
     "orientation": "landscape",
     "icon": "./assets/images/icon.png",
-    "scheme": "kioskable",
+    "scheme": "servestation",
     "userInterfaceStyle": "automatic",
     "ios": {
       "icon": "./assets/expo.icon"
@@ -18,7 +18,7 @@
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "predictiveBackGestureEnabled": false,
-      "package": "com.anonymous.kioskable"
+      "package": "com.anonymous.servestation"
     },
     "web": {
       "output": "static",

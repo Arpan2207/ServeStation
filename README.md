@@ -1,6 +1,6 @@
-# Kioskable
+# ServeStation
 
-Kioskable is a tablet-first POS interface built with Expo, React Native, TypeScript, and `react-native-unistyles`.
+ServeStation is a tablet-first POS interface built with Expo, React Native, TypeScript, and `react-native-unistyles`.
 
 It is designed for landscape kiosk and counter workflows, with a UI that prioritizes fast product selection, order review, and operational control on larger touch devices.
 

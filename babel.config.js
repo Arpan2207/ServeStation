@@ -1,4 +1,4 @@
-/** Babel configuration for Kioskable — enables the Unistyles compiler plugin. */
+/** Babel configuration for ServeStation — enables the Unistyles compiler plugin. */
 module.exports = function (api) {
   api.cache(true);
   return {

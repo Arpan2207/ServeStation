@@ -1,5 +1,5 @@
 /**
- * Design-token palette extracted from the Kioskable Figma file.
+ * Design-token palette extracted from the ServeStation Figma file.
  * Every color used across the app should reference these tokens
  * rather than hardcoding hex values in component styles.
  */
