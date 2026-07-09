@@ -13,7 +13,7 @@ import React from "react";
 import { Pressable, Text, View } from "react-native";
 import { StyleSheet } from "react-native-unistyles";
 
-import { formatCurrency } from "@/lib/mockData";
+import { formatCurrency } from "@/domain/money";
 import type { Modifier } from "@/types/pos";
 
 /** Number of modifier pills per row, matching the Figma 3-up layout. */

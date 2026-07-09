@@ -13,7 +13,7 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { StyleSheet } from "react-native-unistyles";
 
 import { Screen } from "@/components/ui/Screen";
-import { getOrderById, ORDERS } from "@/lib/mockOrderData";
+import { ordersRepository } from "@/repositories";
 import type { OrderType } from "@/types/orders";
 
 const SUPPORT_CHIPS = ["Allergy note", "VIP guest", "Call before handoff"] as const;
@@ -37,7 +37,7 @@ const ORDER_TYPE_LABEL: Record<OrderType, string> = {
 export function OrderDetailScreen() {
   // Resolve the order from the route param, falling back to the first order.
   const { id } = useLocalSearchParams<{ id?: string }>();
-  const order = getOrderById(id) ?? ORDERS[0];
+  const order = ordersRepository.getOrderById(id) ?? ordersRepository.getOrders()[0];
   const router = useRouter();
 
   // Local, frontend-only interaction state.

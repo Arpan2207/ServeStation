@@ -12,7 +12,7 @@ import { Pressable, ScrollView, Text, View } from "react-native";
 import { StyleSheet } from "react-native-unistyles";
 import { Chip } from "@/components/ui/Chip";
 import { Button } from "@/components/ui/Button";
-import { formatCurrency } from "@/lib/mockData";
+import { formatCurrency } from "@/domain/money";
 import type { CartLine, OrderTotals, OrderType } from "@/types/pos";
 
 /** Static, cosmetic secondary actions (no behavior in this phase). */

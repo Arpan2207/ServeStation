@@ -15,14 +15,14 @@ import { StyleSheet } from "react-native-unistyles";
 import { Screen } from "@/components/ui/Screen";
 import { useAdminState } from "@/hooks/useAdminState";
 import type { AdminCategoryWithCount } from "@/hooks/useAdminState";
-import {
-    ADMIN_FILTER_CHIPS,
-    formatAdminPrice,
-} from "@/lib/mockAdminData";
+import { adminRepository } from "@/repositories";
 import type {
   AdminEditableField,
   AdminMenuItem,
 } from "@/types/admin";
+
+/** Filter chips sourced through the repository boundary. */
+const ADMIN_FILTER_CHIPS = adminRepository.getFilterChips();
 
 interface ModifierOptionDraft {
   id: string;
@@ -168,7 +168,7 @@ function AdminItemCard({
         </View>
         <View style={[styles.pricePill, editing && styles.pricePillActive]}>
           <Text style={[styles.priceText, editing && styles.priceTextActive]}>
-            {formatAdminPrice(item.price)}
+            {adminRepository.formatPrice(item.price)}
           </Text>
         </View>
       </View>

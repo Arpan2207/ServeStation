@@ -9,7 +9,7 @@ import React from "react";
 import { Pressable, Text, View } from "react-native";
 import { StyleSheet } from "react-native-unistyles";
 
-import { buildOrderMeta } from "@/lib/mockOrderData";
+import { ordersRepository } from "@/repositories";
 import type { Order } from "@/types/orders";
 
 interface OrderRowProps {
@@ -53,7 +53,7 @@ export function OrderRow({ order, selected, onPress }: OrderRowProps) {
           <Text style={styles.orderTitle}>
             #{order.orderNumber} · {order.customer}
           </Text>
-          <Text style={styles.meta}>{buildOrderMeta(order)}</Text>
+          <Text style={styles.meta}>{ordersRepository.getOrderMeta(order)}</Text>
         </View>
 
         <Text style={styles.total}>{order.total}</Text>

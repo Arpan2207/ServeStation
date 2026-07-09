@@ -16,8 +16,12 @@ import { StyleSheet } from "react-native-unistyles";
 import { Screen } from "@/components/ui/Screen";
 import { HStack } from "@/components/ui/Stack";
 import { usePosState } from "@/hooks/usePosState";
-import { CATEGORIES, formatCurrency } from "@/lib/mockData";
+import { formatCurrency } from "@/domain/money";
+import { menuRepository } from "@/repositories";
 import type { MenuItem } from "@/types/pos";
+
+/** Category list sourced through the repository boundary. */
+const CATEGORIES = menuRepository.getCategories();
 import { CartPanel } from "./CartPanel";
 import { CategoryBar } from "./CategoryBar";
 import { MenuItemCard } from "./MenuItemCard";
