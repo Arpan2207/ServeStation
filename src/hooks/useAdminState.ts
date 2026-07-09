@@ -11,18 +11,19 @@
 
 import { useCallback, useMemo, useReducer, useState } from "react";
 
-import {
-  ADMIN_CATEGORIES,
-  ADMIN_MENU_ITEMS,
-  DEFAULT_ADMIN_CATEGORY_ID,
-  DEFAULT_ADMIN_ITEM_ID,
-} from "@/lib/mockAdminData";
+import { adminRepository } from "@/repositories";
 import type {
   AdminCategory,
   AdminEditableField,
   AdminFilterId,
   AdminMenuItem,
 } from "@/types/admin";
+
+/* Admin catalog data sourced through the repository boundary. */
+const ADMIN_CATEGORIES: AdminCategory[] = adminRepository.getCategories();
+const ADMIN_MENU_ITEMS: AdminMenuItem[] = adminRepository.getItems();
+const DEFAULT_ADMIN_CATEGORY_ID: string = adminRepository.getDefaultCategoryId();
+const DEFAULT_ADMIN_ITEM_ID: string = adminRepository.getDefaultItemId();
 
 /* ── Items reducer ───────────────────────────────────── */
 

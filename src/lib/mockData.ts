@@ -135,16 +135,11 @@ export const MENU_ITEMS: MenuItem[] = [
   },
 ];
 
-/* ── Pricing config + helpers ────────────────────────── */
+/* ── Pricing config ──────────────────────────────────── */
 
 /** Flat mock tax rate applied to the cart subtotal (9%). */
 export const TAX_RATE = 0.09;
 
-/**
- * Format a dollar amount as a `$` currency string with two decimals.
- * @param amount Value in dollars.
- * @returns Formatted string, e.g. `$13.50`.
- */
-export function formatCurrency(amount: number): string {
-  return `$${amount.toFixed(2)}`;
-}
+// Currency formatting now lives in the canonical domain layer
+// (`@/domain/money` → `formatMoney` / `formatCurrency`) so presentation logic
+// is not coupled to this mock-data module.

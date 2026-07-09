@@ -9,8 +9,11 @@
 
 import { useMemo, useState } from "react";
 
-import { ORDERS } from "@/lib/mockOrderData";
+import { ordersRepository } from "@/repositories";
 import type { Order, OrderTab } from "@/types/orders";
+
+/* Orders sourced through the repository boundary (not from mock modules). */
+const ORDERS: Order[] = ordersRepository.getOrders();
 
 export interface UseOrdersState {
   tab: OrderTab;

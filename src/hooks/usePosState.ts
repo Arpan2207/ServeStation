@@ -10,11 +10,7 @@
 
 import { useCallback, useMemo, useReducer, useState } from "react";
 
-import {
-  DEFAULT_CATEGORY_ID,
-  MENU_ITEMS,
-  TAX_RATE,
-} from "@/lib/mockData";
+import { menuRepository } from "@/repositories";
 import type {
   CartLine,
   MenuItem,
@@ -22,6 +18,12 @@ import type {
   OrderTotals,
   OrderType,
 } from "@/types/pos";
+
+/* Catalog data + config sourced through the repository boundary (never from
+   mock-data modules directly), so a future Supabase adapter can replace it. */
+const MENU_ITEMS: MenuItem[] = menuRepository.getItems();
+const DEFAULT_CATEGORY_ID: string = menuRepository.getDefaultCategoryId();
+const TAX_RATE: number = menuRepository.getTaxRate();
 
 /* ── Cart reducer ────────────────────────────────────── */
 
