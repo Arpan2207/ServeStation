@@ -1,23 +1,30 @@
 -- ============================================================================
--- ServeStation — Phase 3 initial Supabase schema
+-- ServeStation (Tablecraft) — Phase 3 initial Supabase schema
 -- ----------------------------------------------------------------------------
 -- This migration mirrors the canonical domain model in `src/domain/*`.
 --
 -- ORDER MODEL FIRST: orders are the highest-risk, longest-lived contract in the
--- product (lifecycle state, kitchen status, timestamps, payments, refunds,
--- reporting, future notifications). They are defined at the top of this file
--- and drive the rest of the schema. The catalog tables (categories, items,
--- modifiers) are created afterward, and the cross-table foreign keys from the
--- order tables into the catalog are attached at the end so the order model can
--- be read and reviewed first.
+-- product (status, timestamps, reporting, future payments/notifications). They
+-- are defined at the top of this file and drive the rest of the schema. The
+-- catalog tables (categories, items, modifiers) are created afterward, and the
+-- cross-table foreign keys from the order tables into the catalog are attached
+-- at the end so the order model can be read and reviewed first.
+--
+-- FIRST-RELEASE CONTRACT (locked; see docs/order-lifecycle.md):
+--   * Carts stay device-local; a `draft` order is NEVER persisted. An order row
+--     is created only on "Place order" and enters as `submitted`.
+--   * A single status machine drives the queue:
+--         submitted → preparing → ready → completed
+--                               ↘ cancelled
+--   * Payments and refunds are DEFERRED to a later migration/phase — there are
+--     no payment/refund columns here (see notes at the bottom).
 --
 -- Money is stored as numeric(10,2) (raw dollars) — never formatted "$" strings.
 -- Timestamps are timestamptz — UI phrases like "2 min ago" are computed in the
 -- app, never stored. Line items snapshot name/price so catalog edits never
 -- rewrite historical orders.
 --
--- Auth / RLS is intentionally deferred (see the notes at the bottom). Adopt it
--- as a follow-up milestone once catalog reads and order writes are validated.
+-- Auth / RLS is intentionally deferred (see the notes at the bottom).
 -- ============================================================================
 
 create extension if not exists pgcrypto;
@@ -26,17 +33,11 @@ create extension if not exists pgcrypto;
 
 create type fulfilment_type as enum ('dine_in', 'pickup', 'delivery');
 
-create type order_lifecycle_status as enum (
-  'draft', 'submitted', 'accepted', 'in_progress', 'ready', 'completed', 'cancelled'
+-- Single operational status. No `draft` (carts are local) and no separate
+-- kitchen state machine (one status is the queue truth).
+create type order_status as enum (
+  'submitted', 'preparing', 'ready', 'completed', 'cancelled'
 );
-
-create type kitchen_status as enum ('pending', 'queued', 'cooking', 'plated', 'served');
-
-create type payment_status as enum (
-  'unpaid', 'pending', 'paid', 'refunded', 'partially_refunded'
-);
-
-create type payment_method as enum ('cash', 'card', 'wallet', 'other');
 
 create type catalog_visibility as enum ('visible', 'draft');
 
@@ -76,32 +77,32 @@ create table orders (
   staff_id            uuid,
 
   fulfilment_type     fulfilment_type not null,
-  lifecycle_status    order_lifecycle_status not null default 'submitted',
-  kitchen_status      kitchen_status not null default 'pending',
+  -- Orders always enter as 'submitted' (carts are never persisted as drafts).
+  status              order_status not null default 'submitted',
 
   customer_name       text,
   destination_label   text,
 
-  payment_status      payment_status not null default 'unpaid',
-  payment_method      payment_method,
-  payment_reference   text,
-
-  -- Money as raw numeric values; total is stored explicitly for reporting and
-  -- should satisfy: total = subtotal + tax - discount - refund_total.
-  subtotal            numeric(10,2) not null default 0,
-  tax                 numeric(10,2) not null default 0,
-  discount            numeric(10,2) not null default 0,
-  refund_total        numeric(10,2) not null default 0,
-  total               numeric(10,2) not null default 0,
+  -- Money as raw numeric values; total is stored explicitly for reporting.
+  -- First-release invariant (payments deferred): total = subtotal + tax - discount.
+  subtotal            numeric(10,2) not null default 0 check (subtotal >= 0),
+  tax                 numeric(10,2) not null default 0 check (tax >= 0),
+  discount            numeric(10,2) not null default 0 check (discount >= 0),
+  total               numeric(10,2) not null default 0 check (total >= 0),
+  constraint orders_total_consistent
+    check (total = subtotal + tax - discount),
 
   note                text,
   cancellation_reason text,
-  refund_reason       text,
+  -- Cancellation must carry a reason; other states must not pretend to have one.
+  constraint orders_cancellation_reason_only_when_cancelled check (
+    (status = 'cancelled' and cancellation_reason is not null)
+    or (status <> 'cancelled' and cancellation_reason is null)
+  ),
 
   -- Lifecycle milestone timestamps; only reached milestones are set.
   submitted_at        timestamptz,
-  accepted_at         timestamptz,
-  started_at          timestamptz,
+  preparing_at        timestamptz,
   ready_at            timestamptz,
   completed_at        timestamptz,
   cancelled_at        timestamptz,
@@ -116,8 +117,60 @@ create trigger orders_set_updated_at
   before update on orders
   for each row execute function set_updated_at();
 
-create index orders_store_lifecycle_idx on orders (store_id, lifecycle_status);
+-- Operational indexes for the real queries this app runs.
+-- Store queue filtered by status + recency (Open/Closed lists).
+create index orders_store_status_created_idx
+  on orders (store_id, status, created_at desc);
 create index orders_created_at_idx on orders (created_at desc);
+-- Partial index for the hot "active queue" reads (submitted/preparing/ready).
+create index orders_active_queue_idx
+  on orders (store_id, created_at desc)
+  where status in ('submitted', 'preparing', 'ready');
+
+-- Guarded status transition. The UI must call this function (or an RPC wrapping
+-- it) rather than issuing arbitrary UPDATEs, so invalid moves such as
+-- completed → preparing can never be written. It also stamps the milestone
+-- timestamp for the target status. Keep this in sync with
+-- ORDER_STATUS_TRANSITIONS / TIMESTAMP_FIELD_FOR_STATUS in src/domain/orders.ts.
+create or replace function apply_order_status_transition(
+  p_order_id uuid,
+  p_new_status order_status,
+  p_reason text default null
+)
+returns orders as $$
+declare
+  v_order   orders;
+  v_allowed boolean;
+begin
+  select * into v_order from orders where id = p_order_id for update;
+  if not found then
+    raise exception 'Order % not found', p_order_id;
+  end if;
+
+  v_allowed := case v_order.status
+    when 'submitted' then p_new_status in ('preparing', 'cancelled')
+    when 'preparing' then p_new_status in ('ready', 'cancelled')
+    when 'ready'     then p_new_status in ('completed', 'cancelled')
+    else false -- completed / cancelled are terminal
+  end;
+
+  if not v_allowed then
+    raise exception 'Invalid order transition: % -> %', v_order.status, p_new_status;
+  end if;
+
+  update orders
+     set status              = p_new_status,
+         preparing_at        = case when p_new_status = 'preparing' then now() else preparing_at end,
+         ready_at            = case when p_new_status = 'ready'     then now() else ready_at end,
+         completed_at        = case when p_new_status = 'completed' then now() else completed_at end,
+         cancelled_at        = case when p_new_status = 'cancelled' then now() else cancelled_at end,
+         cancellation_reason = case when p_new_status = 'cancelled' then p_reason else cancellation_reason end
+   where id = p_order_id
+   returning * into v_order;
+
+  return v_order;
+end;
+$$ language plpgsql;
 
 -- Order line items. Snapshot name/price so historical orders never change when
 -- the catalog is edited. menu_item_id is a soft reference (FK added at the end).
@@ -126,7 +179,7 @@ create table order_items (
   order_id       uuid not null references orders(id) on delete cascade,
   menu_item_id   uuid,
   name_snapshot  text not null,
-  unit_price     numeric(10,2) not null default 0,
+  unit_price     numeric(10,2) not null default 0 check (unit_price >= 0),
   quantity       integer not null default 1 check (quantity > 0),
   note           text,
   created_at     timestamptz not null default now()
@@ -134,7 +187,8 @@ create table order_items (
 
 create index order_items_order_id_idx on order_items (order_id);
 
--- Per-line modifier selections, snapshotted at order time.
+-- Per-line modifier selections, snapshotted at order time. price_delta is
+-- intentionally unconstrained in sign so future discount-style modifiers work.
 create table order_item_modifiers (
   id                 uuid primary key default gen_random_uuid(),
   order_item_id      uuid not null references order_items(id) on delete cascade,
@@ -181,7 +235,7 @@ create table menu_items (
   category_id   uuid references menu_categories(id) on delete set null,
   name          text not null,
   description   text not null default '',
-  price         numeric(10,2) not null default 0,
+  price         numeric(10,2) not null default 0 check (price >= 0),
   -- Merchandising flag (curated "Popular" view), NOT a category row.
   is_popular    boolean not null default false,
   is_available  boolean not null default true,
@@ -249,10 +303,17 @@ alter table order_item_modifiers
 -- 1. Auth / RLS: add `profiles`/`staff_profiles` (linked to auth.users), a FK
 --    from orders.staff_id, and enable Row Level Security with store-scoped
 --    policies. Deferred so catalog reads + order writes can be validated first.
--- 2. Payments: `payment_reference` holds an external provider id; a dedicated
---    `payments` table can be introduced when a real processor is integrated.
--- 3. Notifications: use the commented `order_events` table (or a dedicated
+-- 2. Payments (DEFERRED — not in first release): introduce a dedicated
+--    `payments` table (processor/cash records, linked to orders.id) rather than
+--    columns on `orders`. Do not add `payment_status`/`payment_reference` back
+--    to `orders`; keep payment history append-only in its own table.
+-- 3. Refunds (DEFERRED): introduce `refunds` / `order_adjustments` as an
+--    append-only partial-refund history joined to the final order id. A single
+--    `refund_total` column is intentionally NOT used (it hides real history).
+-- 4. Notifications: use the commented `order_events` table (or a dedicated
 --    `order_notifications` table) rather than adding UI-derived flags to orders.
--- 4. Reporting: query raw numeric money + timestamptz columns; never persist
+-- 5. Reporting: query raw numeric money + timestamptz columns; never persist
 --    formatted strings ("$13.50") or relative phrases ("2 min ago").
+-- 6. Status changes: write via apply_order_status_transition() (or an RPC that
+--    wraps it), never via arbitrary UPDATEs, so invalid transitions are refused.
 -- ============================================================================
