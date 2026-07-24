@@ -6,8 +6,11 @@ It reflects the readiness work already landed in the codebase and sequences the
 remaining backend milestones.
 
 The guiding rule: **the order model is designed first and drives everything.**
-Catalog migration is comparatively easy; orders carry lifecycle state,
-timestamps, payments, refunds, and reporting, so they were modeled up front.
+Catalog migration is comparatively easy; orders carry operational state,
+timestamps, and reporting, so they were modeled up front. The order contract is
+now **reviewed and locked** — see [order-lifecycle.md](./order-lifecycle.md) for
+the authoritative state machine, timestamps, snapshot rules, and what is
+deliberately deferred (payments, refunds, notifications).
 
 ## What's already in place (readiness landed)
 
@@ -17,9 +20,12 @@ timestamps, payments, refunds, and reporting, so they were modeled up front.
     converters from the two legacy casings
   - `menu.ts` — `MenuCategory`, `MenuItem`, `ModifierGroup`, `ModifierOption`,
     `Catalog`
-  - `orders.ts` — the carefully designed `Order` aggregate (lifecycle status,
-    kitchen status, payment status/method/reference, numeric `OrderMoney`,
-    milestone `OrderTimestamps`, snapshotted `OrderItem`/`OrderItemModifier`)
+  - `orders.ts` — the reviewed `Order` aggregate: a single `OrderStatus`
+    (`submitted → preparing → ready → completed`, plus `cancelled`), numeric
+    `OrderMoney` (`total = subtotal + tax - discount`), milestone
+    `OrderTimestamps`, snapshotted `OrderItem`/`OrderItemModifier`, and pure
+    lifecycle helpers (`createSubmittedOrder`, `transitionOrder`, `cancelOrder`).
+    Payments/refunds are deferred (no fields on the order).
 - **Mapping layer** — `src/mappers/`
   - normalizes the per-screen view/mock shapes into the canonical model
     (POS `label`→`name`, admin string prices → numeric, order UI strings →
@@ -46,12 +52,14 @@ flowchart LR
 
 ## Rollout sequence
 
-### Step 0 — Order model review (do this first)
-- Review `src/domain/orders.ts` and the `orders` section of
-  `supabase/migrations/0001_init.sql` together.
-- Confirm lifecycle states, kitchen states, payment states, money fields, and
-  timestamp milestones match how the business actually operates.
-- Treat this as a contract: changing it later is expensive.
+### Step 0 — Order model review (DONE — contract locked)
+- Reviewed `src/domain/orders.ts` and the `orders` section of
+  `supabase/migrations/0001_init.sql` together and reconciled them.
+- Locked a single status machine, milestone timestamps, money invariant, and
+  guarded transitions (code `transitionOrder` + SQL
+  `apply_order_status_transition`); deferred payments/refunds to later phases.
+- The contract, allowed/rejected transitions, and acceptance tests are captured
+  in [order-lifecycle.md](./order-lifecycle.md). Treat changes as expensive.
 
 ### Step 1 — Supabase foundation
 - Create the Supabase project (dev + prod) and run `0001_init.sql`.
@@ -66,10 +74,13 @@ flowchart LR
 - Keep cart / order submission local until reads are stable.
 
 ### Step 3 — Order writes
-- Add write methods to `OrdersRepository` (create order from the current cart).
+- The `OrdersRepository` write contract is already defined (`createOrder`,
+  `transitionOrder`, `cancelOrder`, active/history queue reads); implement the
+  Supabase adapter against it — `transitionOrder`/`cancelOrder` should call the
+  `apply_order_status_transition` RPC, never raw `UPDATE`s.
 - Persist submitted orders; read the Orders list/detail from Supabase.
-- Update the POS `placeOrder` flow to call the repository instead of only
-  resetting local state.
+- Update the POS `placeOrder` flow to call `ordersRepository.createOrder(...)`
+  (build `OrderCreateInput` from the cart) instead of only resetting local state.
 
 ### Step 4 — Admin mutations
 - Back `AdminRepository` edits (field updates, add item, publish, stock) with
