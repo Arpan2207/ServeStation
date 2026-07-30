@@ -52,6 +52,23 @@ export function fromOrdersOrderType(value: OrdersOrderTypeLegacy): FulfilmentTyp
 }
 
 /**
+ * Convert a canonical fulfilment type back into the legacy Orders (kebab)
+ * casing used by the current Orders view types.
+ * @param type Canonical snake_case fulfilment type.
+ * @returns The kebab-cased Orders value, e.g. "dine-in".
+ */
+export function toOrdersOrderType(type: FulfilmentType): OrdersOrderTypeLegacy {
+  switch (type) {
+    case "dine_in":
+      return "dine-in";
+    case "pickup":
+      return "pickup";
+    case "delivery":
+      return "delivery";
+  }
+}
+
+/**
  * Human-friendly label for a canonical fulfilment type.
  * @param type Canonical fulfilment type.
  * @returns A capitalized display label, e.g. "Dine-in".

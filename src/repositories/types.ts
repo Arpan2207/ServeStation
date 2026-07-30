@@ -9,7 +9,11 @@
  */
 
 import type { Catalog } from "@/domain/menu";
-import type { Order as CanonicalOrder } from "@/domain/orders";
+import type {
+  Order as CanonicalOrder,
+  OrderCreateInput,
+  OrderStatus,
+} from "@/domain/orders";
 import type {
   AdminCategory,
   AdminFilterChip,
@@ -19,32 +23,70 @@ import type {
 import type { Order as OrderView } from "@/types/orders";
 import type { MenuCategory, MenuItem } from "@/types/pos";
 
-/** Reads for the POS catalog (categories, items, pricing config). */
+/**
+ * Reads for the POS catalog (categories, items, pricing config).
+ *
+ * Catalog reads are async because a real backend (Supabase) fetches them over
+ * the network; the mock adapter simply resolves immediately. Pure config values
+ * that are not backend-derived yet (`getDefaultCategoryId`, `getTaxRate`) stay
+ * synchronous.
+ */
 export interface MenuRepository {
   /** Ordered category list for the POS category bar (view shape). */
-  getCategories(): MenuCategory[];
-  /** Id of the category selected on first mount. */
+  getCategories(): Promise<MenuCategory[]>;
+  /** Id of the category selected on first mount (synthetic "popular" view). */
   getDefaultCategoryId(): string;
   /** All sellable menu items (view shape, inline modifiers). */
-  getItems(): MenuItem[];
+  getItems(): Promise<MenuItem[]>;
   /** Look up a single item by id. */
-  getItemById(id: string): MenuItem | undefined;
+  getItemById(id: string): Promise<MenuItem | undefined>;
   /** Flat tax rate applied to the cart subtotal. */
   getTaxRate(): number;
   /** Canonical, backend-facing catalog snapshot (normalized). */
-  getCatalog(): Catalog;
+  getCatalog(): Promise<Catalog>;
 }
 
-/** Reads for orders (list + detail), plus canonical access for reporting. */
+/**
+ * Orders data boundary.
+ *
+ * The operations are intentionally shaped around the reviewed order contract
+ * (create-from-cart, queue reads, guarded transitions, cancellation) rather
+ * than exposing a generic `updateOrder(anyFields)` — so invalid lifecycle
+ * changes are hard to express and the Supabase adapter can mirror the guarded
+ * `apply_order_status_transition` RPC one-to-one.
+ */
 export interface OrdersRepository {
+  /* ── View reads (current UI: Orders list + detail) ── */
+
   /** All orders (view shape) across both open/closed queues. */
   getOrders(): OrderView[];
   /** Look up a single order by id; undefined when missing. */
   getOrderById(id: string | undefined): OrderView | undefined;
   /** Build the compact list meta line, e.g. "3 items · dine-in · 2 min ago". */
   getOrderMeta(order: OrderView): string;
-  /** Canonical, backend-facing orders (numeric money, lifecycle, timestamps). */
+
+  /* ── Canonical reads (backend/reporting facing) ── */
+
+  /** Canonical, backend-facing orders (numeric money, status, timestamps). */
   getCanonicalOrders(): CanonicalOrder[];
+  /** Active queue only (submitted/preparing/ready), optionally store-scoped. */
+  getActiveOrders(storeId?: string): CanonicalOrder[];
+  /** Historical queue only (completed/cancelled), optionally store-scoped. */
+  getOrderHistory(storeId?: string): CanonicalOrder[];
+  /** Canonical order with items/modifiers; undefined when missing. */
+  getCanonicalOrderById(id: string | undefined): CanonicalOrder | undefined;
+
+  /* ── Guarded writes (the only ways to mutate an order) ── */
+
+  /** Create a `submitted` order from a local cart snapshot. */
+  createOrder(input: OrderCreateInput): CanonicalOrder;
+  /**
+   * Move an order along an approved path only. Throws when the transition is
+   * invalid (e.g. completed → preparing) or the order is missing.
+   */
+  transitionOrder(id: string, to: OrderStatus): CanonicalOrder;
+  /** Cancel an eligible order with a required reason. */
+  cancelOrder(id: string, reason: string): CanonicalOrder;
 }
 
 /** Reads for the Admin workspace (editable catalog + editor config). */
