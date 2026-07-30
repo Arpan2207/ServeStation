@@ -24,22 +24,22 @@ import type { MenuRepository } from "@/repositories/types";
 /** Build the mock-backed menu repository. */
 export function createMockMenuRepository(): MenuRepository {
   return {
-    getCategories() {
+    async getCategories() {
       return CATEGORIES;
     },
     getDefaultCategoryId() {
       return DEFAULT_CATEGORY_ID;
     },
-    getItems() {
+    async getItems() {
       return MENU_ITEMS;
     },
-    getItemById(id) {
+    async getItemById(id) {
       return MENU_ITEMS.find((item) => item.id === id);
     },
     getTaxRate() {
       return TAX_RATE;
     },
-    getCatalog(): Catalog {
+    async getCatalog(): Promise<Catalog> {
       // Collapse the per-item inline modifiers into a de-duplicated set of
       // canonical options, exposed here as a single implicit group.
       const optionsById = new Map<string, ModifierOption>();
