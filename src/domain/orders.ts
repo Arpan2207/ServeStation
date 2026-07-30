@@ -288,12 +288,25 @@ export function computeOrderMoney(
   return { subtotal, tax, discount, total };
 }
 
-/** Best-effort id generator (uses crypto.randomUUID when available). */
+/**
+ * Best-effort UUID generator.
+ *
+ * Prefers the platform `crypto.randomUUID()` when available. Some runtimes
+ * (e.g. React Native / Hermes without a crypto polyfill) do not expose it, so
+ * we fall back to an RFC 4122 v4 string built from `Math.random`. The fallback
+ * is not cryptographically strong, but it always yields a value the database
+ * `uuid` columns accept — unlike the previous `ord_...` prefix format.
+ */
 function newId(): string {
   const cryptoObj = (globalThis as { crypto?: { randomUUID?: () => string } })
     .crypto;
   if (cryptoObj?.randomUUID) return cryptoObj.randomUUID();
-  return `ord_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
+  // RFC 4122 version 4 template; `x` = random nibble, `y` = 8..b variant nibble.
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (char) => {
+    const rand = (Math.random() * 16) | 0;
+    const value = char === "x" ? rand : (rand & 0x3) | 0x8;
+    return value.toString(16);
+  });
 }
 
 /**

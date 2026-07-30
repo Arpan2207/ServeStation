@@ -80,14 +80,30 @@ Implemented in code:
 
 The cart remains device-local at this stage.
 
-## 6. Connect order creation — we implement this
+## 6. Connect order creation — code complete, migration pending
 
-1. Convert the local cart into `OrderCreateInput`.
-2. On **Place order**, create the `orders`, `order_items`, and
-   `order_item_modifiers` records as one consistent operation.
-3. Preserve line-item and modifier snapshots so catalog edits cannot rewrite
-   order history.
-4. Confirm every newly created order starts as `submitted`.
+Implemented in code:
+
+- Cart lines now retain base price + structured modifiers, so orders snapshot
+  them faithfully (`src/types/pos.ts`, `usePosState`).
+- `OrdersRepository.createOrder` is async; a Supabase orders adapter
+  (`src/repositories/adapters/supabase/ordersSupabaseRepository.ts`) persists
+  the order via an atomic `create_order` RPC (order + items + modifiers in one
+  transaction). Reads still use mock data until Step 7.
+- POS **Place order** builds `OrderCreateInput` from the cart, persists it, then
+  clears the cart. The cart shows placing / success / error states.
+
+**You still need to run the new migration (once):**
+
+1. Open the Supabase **SQL Editor**.
+2. Run the entire contents of
+   [`supabase/migrations/0002_create_order.sql`](../supabase/migrations/0002_create_order.sql).
+3. Restart Expo (`npm run dev:clear`), add items, and press **Place order**.
+4. Verify a new row appears in the `orders` table (with `order_items` and
+   `order_item_modifiers`) and that its `status` is `submitted`.
+
+Note: the placed order persists to Supabase, but the **Orders list still shows
+mock data** until Step 7 connects those reads.
 
 ## 7. Connect Orders list and detail — we implement this
 
@@ -119,14 +135,16 @@ This must be in place before live Admin editing.
 
 ## What to do now
 
-Steps 1–4 are done and the Step 5 code is in place. To finish Step 5:
+Step 5 is verified (catalog loads from Supabase). The Step 6 code is in place.
+To finish Step 6:
 
-1. Run [`supabase/seeds/0001_catalog_seed.sql`](../supabase/seeds/0001_catalog_seed.sql)
+1. Run [`supabase/migrations/0002_create_order.sql`](../supabase/migrations/0002_create_order.sql)
    in the Supabase SQL Editor.
 2. Restart Expo with `npm run dev:clear`.
-3. Open the POS screen and confirm the menu loads from Supabase.
+3. Add items to the cart and press **Place order**.
+4. Confirm a new `orders` row (status `submitted`) with its `order_items` and
+   `order_item_modifiers` appears in Supabase.
 
-If anything fails to load, the POS screen shows the error with a **Retry**
-button; share the message and we can debug the query or seed.
+If placing fails, the cart shows the error message; share it and we can debug.
 
 Do **not** share the database password or `service_role` key.

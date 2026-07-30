@@ -50,6 +50,12 @@ export interface CartLine {
   name: string;
   /** Human-readable summary of the selected modifiers (or base description). */
   note: string;
+  /** Raw custom instruction typed by staff (excludes the modifier summary). */
+  instruction?: string;
+  /** Base item price, excluding modifier deltas — snapshotted for the order. */
+  basePrice: number;
+  /** Selected modifiers, retained structurally so orders can snapshot them. */
+  modifiers: Modifier[];
   /** Base price + selected modifier deltas, in dollars. */
   unitPrice: number;
   qty: number;

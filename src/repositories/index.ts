@@ -12,6 +12,7 @@ import { createMockAdminRepository } from "./adapters/mock/adminMockRepository";
 import { createMockMenuRepository } from "./adapters/mock/menuMockRepository";
 import { createMockOrdersRepository } from "./adapters/mock/ordersMockRepository";
 import { createSupabaseMenuRepository } from "./adapters/supabase/menuSupabaseRepository";
+import { createSupabaseOrdersRepository } from "./adapters/supabase/ordersSupabaseRepository";
 import type { AdminRepository, MenuRepository, OrdersRepository } from "./types";
 
 /**
@@ -31,8 +32,14 @@ export const menuRepository: MenuRepository = supabaseConfigured
   ? createSupabaseMenuRepository()
   : createMockMenuRepository();
 
-/** Active orders repository (mock-backed for now). */
-export const ordersRepository: OrdersRepository = createMockOrdersRepository();
+/**
+ * Active orders repository. Uses Supabase when configured (Step 6: order
+ * creation persists to Supabase; list/detail reads are still mock until Step 7),
+ * otherwise the fully mock-backed adapter.
+ */
+export const ordersRepository: OrdersRepository = supabaseConfigured
+  ? createSupabaseOrdersRepository()
+  : createMockOrdersRepository();
 
 /** Active admin catalog repository (mock-backed for now). */
 export const adminRepository: AdminRepository = createMockAdminRepository();

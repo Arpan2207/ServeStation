@@ -175,6 +175,9 @@ export function HomePosScreen() {
           onDecrement={pos.decrementLine}
           totals={pos.totals}
           onPlaceOrder={pos.placeOrder}
+          placingOrder={pos.placingOrder}
+          placeError={pos.placeError}
+          lastPlacedSummary={pos.lastPlacedSummary}
         />
       </View>
     </Screen>

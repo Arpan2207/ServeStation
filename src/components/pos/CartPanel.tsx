@@ -30,6 +30,12 @@ interface CartPanelProps {
   onDecrement: (lineId: string) => void;
   totals: OrderTotals;
   onPlaceOrder: () => void;
+  /** True while an order is being persisted. */
+  placingOrder: boolean;
+  /** Error message from the last place-order attempt, if any. */
+  placeError: string | null;
+  /** Confirmation summary from the last successful order, if any. */
+  lastPlacedSummary: string | null;
 }
 
 /**
@@ -46,6 +52,9 @@ export function CartPanel({
   onDecrement,
   totals,
   onPlaceOrder,
+  placingOrder,
+  placeError,
+  lastPlacedSummary,
 }: CartPanelProps) {
   const isEmpty = cart.length === 0;
 
@@ -127,8 +136,15 @@ export function CartPanel({
         <TotalRow label="Tax" value={formatCurrency(totals.tax)} />
         <TotalRow label="Total" value={formatCurrency(totals.total)} />
 
+        {/* Place-order feedback: error takes precedence over the success line. */}
+        {placeError ? (
+          <Text style={styles.errorText}>{placeError}</Text>
+        ) : lastPlacedSummary ? (
+          <Text style={styles.successText}>{lastPlacedSummary}</Text>
+        ) : null}
+
         <Button
-          label="Simulate place order"
+          label={placingOrder ? "Placing order…" : "Place order"}
           variant="primary"
           style={styles.placeBtn}
           onPress={onPlaceOrder}
@@ -360,5 +376,16 @@ const styles = StyleSheet.create((theme) => ({
   },
   placeBtn: {
     marginTop: 4,
+  },
+  errorText: {
+    fontFamily: theme.typography.fontFamily.body,
+    fontSize: theme.typography.size.sm,
+    color: theme.colors.danger,
+  },
+  successText: {
+    fontFamily: theme.typography.fontFamily.body,
+    fontSize: theme.typography.size.sm,
+    color: theme.colors.textOnPrimary,
+    opacity: 0.8,
   },
 }));

@@ -11,6 +11,10 @@
 import { useCallback, useEffect, useMemo, useReducer, useState } from "react";
 
 import { useCatalog } from "@/hooks/useCatalog";
+import { fromPosOrderType } from "@/domain/fulfilment";
+import { formatCurrency } from "@/domain/money";
+import type { OrderCreateInput } from "@/domain/orders";
+import { ordersRepository } from "@/repositories";
 import type {
   CartLine,
   MenuCategory,
@@ -19,6 +23,15 @@ import type {
   OrderTotals,
   OrderType,
 } from "@/types/pos";
+
+/**
+ * Generate a human-facing order number for a newly placed order.
+ * Prototype scheme (time-based, unique per millisecond); real per-store
+ * sequential numbering is deferred to a later backend step.
+ */
+function generateOrderNumber(): string {
+  return `A-${Date.now().toString(36).toUpperCase()}`;
+}
 
 /* ── Cart reducer ────────────────────────────────────── */
 
@@ -72,6 +85,9 @@ function cartReducer(state: CartLine[], action: CartAction): CartLine[] {
         itemId: action.item.id,
         name: action.item.name,
         note: buildLineNote(action.modifiers, action.note),
+        instruction: action.note?.trim() || undefined,
+        basePrice: action.item.price,
+        modifiers: action.modifiers,
         unitPrice,
         qty: 1,
       };
@@ -134,8 +150,10 @@ export interface UsePosState {
   totals: OrderTotals;
   cartSummary: string;
 
-  /* simulated order */
+  /* order submission (persists to the repository / Supabase) */
   placeOrder: () => void;
+  placingOrder: boolean;
+  placeError: string | null;
   lastPlacedSummary: string | null;
 }
 
@@ -174,6 +192,8 @@ export function usePosState(): UsePosState {
   const [lastPlacedSummary, setLastPlacedSummary] = useState<string | null>(
     null
   );
+  const [placingOrder, setPlacingOrder] = useState<boolean>(false);
+  const [placeError, setPlaceError] = useState<string | null>(null);
 
   const [cart, dispatch] = useReducer(cartReducer, []);
 
@@ -274,16 +294,44 @@ export function usePosState(): UsePosState {
     return `${cartCount} ${itemWord} · ${orderType.toLowerCase()}`;
   }, [cartCount, orderType]);
 
-  /* Simulated, local-only place order: capture a summary and reset the cart. */
-  const placeOrder = useCallback(() => {
-    if (cart.length === 0) return;
-    setLastPlacedSummary(
-      `${cartCount} ${cartCount === 1 ? "item" : "items"} · ${totals.total.toFixed(
-        2
-      )}`
-    );
-    dispatch({ type: "CLEAR" });
-  }, [cart.length, cartCount, totals.total]);
+  /* Place the order: build the canonical create-input from the cart and persist
+     it through the repository (Supabase when configured). On success, clear the
+     cart and surface a confirmation; on failure, surface the error. */
+  const placeOrder = useCallback(async () => {
+    if (cart.length === 0 || placingOrder) return;
+    setPlacingOrder(true);
+    setPlaceError(null);
+    try {
+      const input: OrderCreateInput = {
+        orderNumber: generateOrderNumber(),
+        fulfilmentType: fromPosOrderType(orderType),
+        taxRate,
+        items: cart.map((line) => ({
+          menuItemId: line.itemId,
+          nameSnapshot: line.name,
+          unitPrice: line.basePrice,
+          quantity: line.qty,
+          note: line.instruction,
+          modifiers: line.modifiers.map((modifier) => ({
+            modifierOptionId: modifier.id,
+            label: modifier.label,
+            priceDelta: modifier.priceDelta,
+          })),
+        })),
+      };
+      const created = await ordersRepository.createOrder(input);
+      setLastPlacedSummary(
+        `Order ${created.orderNumber} placed · ${formatCurrency(created.money.total)}`
+      );
+      dispatch({ type: "CLEAR" });
+    } catch (err) {
+      setPlaceError(
+        err instanceof Error ? err.message : "Failed to place the order."
+      );
+    } finally {
+      setPlacingOrder(false);
+    }
+  }, [cart, placingOrder, orderType, taxRate]);
 
   return {
     categories,
@@ -316,6 +364,8 @@ export function usePosState(): UsePosState {
     cartSummary,
 
     placeOrder,
+    placingOrder,
+    placeError,
     lastPlacedSummary,
   };
 }
