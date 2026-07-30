@@ -1,5 +1,5 @@
 /**
- * Lazily-constructed Supabase client for Tablecraft's repository adapters.
+ * Lazily-constructed Supabase client for ServeStation's repository adapters.
  *
  * Only the public project URL and publishable/anon key are read here. Screen
  * components must never import this module directly; the Supabase repository
