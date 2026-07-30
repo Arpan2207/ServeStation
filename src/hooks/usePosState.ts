@@ -8,28 +8,23 @@
  * here and returned, keeping the screen components purely presentational.
  */
 
-import { useCallback, useMemo, useReducer, useState } from "react";
+import { useCallback, useEffect, useMemo, useReducer, useState } from "react";
 
-import { menuRepository } from "@/repositories";
+import { useCatalog } from "@/hooks/useCatalog";
 import type {
   CartLine,
+  MenuCategory,
   MenuItem,
   Modifier,
   OrderTotals,
   OrderType,
 } from "@/types/pos";
 
-/* Catalog data + config sourced through the repository boundary (never from
-   mock-data modules directly), so a future Supabase adapter can replace it. */
-const MENU_ITEMS: MenuItem[] = menuRepository.getItems();
-const DEFAULT_CATEGORY_ID: string = menuRepository.getDefaultCategoryId();
-const TAX_RATE: number = menuRepository.getTaxRate();
-
 /* ── Cart reducer ────────────────────────────────────── */
 
 /** Actions that mutate the cart line collection. */
 type CartAction =
-  | { type: "ADD"; item: MenuItem; modifiers: Modifier[] }
+  | { type: "ADD"; item: MenuItem; modifiers: Modifier[]; note?: string }
   | { type: "INCREMENT"; lineId: string }
   | { type: "DECREMENT"; lineId: string }
   | { type: "REMOVE"; lineId: string }
@@ -40,25 +35,29 @@ type CartAction =
  * so adding the same configuration twice stacks quantity instead of creating
  * a duplicate line.
  */
-function buildLineId(itemId: string, modifiers: Modifier[]): string {
+function buildLineId(itemId: string, modifiers: Modifier[], note?: string): string {
   const modPart = modifiers
     .map((m) => m.id)
     .sort()
     .join("+");
-  return modPart ? `${itemId}__${modPart}` : itemId;
+  const notePart = note?.trim().toLowerCase();
+  const configuration = [modPart, notePart].filter(Boolean).join("__");
+  return configuration ? `${itemId}__${configuration}` : itemId;
 }
 
-/** Compose the line "note" from selected modifiers, falling back to a hint. */
-function buildLineNote(modifiers: Modifier[]): string {
-  if (modifiers.length === 0) return "No customizations";
-  return modifiers.map((m) => m.label).join(", ");
+/** Compose the displayed cart-line note from modifiers and an optional instruction. */
+function buildLineNote(modifiers: Modifier[], customNote?: string): string {
+  const customization =
+    modifiers.length === 0 ? "No customizations" : modifiers.map((m) => m.label).join(", ");
+  const trimmedNote = customNote?.trim();
+  return trimmedNote ? `${customization} · ${trimmedNote}` : customization;
 }
 
 /** Pure reducer for all cart mutations. */
 function cartReducer(state: CartLine[], action: CartAction): CartLine[] {
   switch (action.type) {
     case "ADD": {
-      const lineId = buildLineId(action.item.id, action.modifiers);
+      const lineId = buildLineId(action.item.id, action.modifiers, action.note);
       const existing = state.find((line) => line.id === lineId);
       if (existing) {
         return state.map((line) =>
@@ -72,7 +71,7 @@ function cartReducer(state: CartLine[], action: CartAction): CartLine[] {
         id: lineId,
         itemId: action.item.id,
         name: action.item.name,
-        note: buildLineNote(action.modifiers),
+        note: buildLineNote(action.modifiers, action.note),
         unitPrice,
         qty: 1,
       };
@@ -101,6 +100,12 @@ function cartReducer(state: CartLine[], action: CartAction): CartLine[] {
 /* ── Hook return shape ───────────────────────────────── */
 
 export interface UsePosState {
+  /* catalog loading */
+  categories: MenuCategory[];
+  catalogLoading: boolean;
+  catalogError: string | null;
+  reloadCatalog: () => void;
+
   /* selection + filters */
   selectedCategoryId: string;
   selectCategory: (categoryId: string) => void;
@@ -117,7 +122,7 @@ export interface UsePosState {
   /* cart */
   cart: CartLine[];
   cartCount: number;
-  addSelectedToCart: () => void;
+  addSelectedToCart: (note?: string) => void;
   addItemToCart: (item: MenuItem) => void;
   incrementLine: (lineId: string) => void;
   decrementLine: (lineId: string) => void;
@@ -142,13 +147,29 @@ export interface UsePosState {
  * handlers the POS components use to drive updates.
  */
 export function usePosState(): UsePosState {
+  /* Catalog is loaded asynchronously through the repository boundary. */
+  const {
+    categories,
+    items,
+    defaultCategoryId,
+    taxRate,
+    loading: catalogLoading,
+    error: catalogError,
+    reload: reloadCatalog,
+  } = useCatalog();
+
   const [selectedCategoryId, setSelectedCategoryId] =
-    useState<string>(DEFAULT_CATEGORY_ID);
+    useState<string>(defaultCategoryId);
   const [searchText, setSearchText] = useState<string>("");
-  const [selectedItemId, setSelectedItemId] = useState<string | null>(
-    MENU_ITEMS[0]?.id ?? null
-  );
+  const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
   const [selectedModifierIds, setSelectedModifierIds] = useState<string[]>([]);
+
+  /* Once the catalog loads, default the selection to the first item. */
+  useEffect(() => {
+    if (selectedItemId === null && items.length > 0) {
+      setSelectedItemId(items[0].id);
+    }
+  }, [items, selectedItemId]);
   const [orderType, setOrderType] = useState<OrderType>("Dine-in");
   const [lastPlacedSummary, setLastPlacedSummary] = useState<string | null>(
     null
@@ -159,7 +180,7 @@ export function usePosState(): UsePosState {
   /* Filter the catalog by the active category and search text. */
   const filteredItems = useMemo(() => {
     const query = searchText.trim().toLowerCase();
-    return MENU_ITEMS.filter((item) => {
+    return items.filter((item) => {
       const matchesCategory =
         selectedCategoryId === "popular"
           ? item.popular
@@ -170,12 +191,12 @@ export function usePosState(): UsePosState {
         item.description.toLowerCase().includes(query);
       return matchesCategory && matchesQuery;
     });
-  }, [selectedCategoryId, searchText]);
+  }, [items, selectedCategoryId, searchText]);
 
   /* Resolve the selected item from its id. */
   const selectedItem = useMemo(
-    () => MENU_ITEMS.find((item) => item.id === selectedItemId) ?? null,
-    [selectedItemId]
+    () => items.find((item) => item.id === selectedItemId) ?? null,
+    [items, selectedItemId]
   );
 
   /* Selecting a new item resets the modifier selection to that item. */
@@ -205,12 +226,13 @@ export function usePosState(): UsePosState {
   );
 
   /* Add the currently selected item (with its modifiers) to the cart. */
-  const addSelectedToCart = useCallback(() => {
+  const addSelectedToCart = useCallback((note?: string) => {
     if (!selectedItem) return;
     dispatch({
       type: "ADD",
       item: selectedItem,
       modifiers: resolveSelectedModifiers(selectedItem),
+      note,
     });
   }, [selectedItem, resolveSelectedModifiers]);
 
@@ -242,9 +264,9 @@ export function usePosState(): UsePosState {
       (sum, line) => sum + line.unitPrice * line.qty,
       0
     );
-    const tax = subtotal * TAX_RATE;
+    const tax = subtotal * taxRate;
     return { subtotal, tax, total: subtotal + tax };
-  }, [cart]);
+  }, [cart, taxRate]);
 
   /* Header summary string, e.g. "3 items · dine-in". */
   const cartSummary = useMemo(() => {
@@ -264,6 +286,11 @@ export function usePosState(): UsePosState {
   }, [cart.length, cartCount, totals.total]);
 
   return {
+    categories,
+    catalogLoading,
+    catalogError,
+    reloadCatalog,
+
     selectedCategoryId,
     selectCategory,
     searchText,

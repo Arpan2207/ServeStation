@@ -34,7 +34,8 @@ type ItemsAction =
   | { type: "ADD_ITEM"; item: AdminMenuItem }
   | { type: "PUBLISH"; id: string }
   | { type: "MARK_UNAVAILABLE"; id: string }
-  | { type: "MARK_IN_STOCK"; id: string };
+  | { type: "MARK_IN_STOCK"; id: string }
+  | { type: "DELETE_CATEGORY_ITEMS"; categoryId: string };
 
 /** Pure reducer for all item mutations. */
 function itemsReducer(state: AdminMenuItem[], action: ItemsAction): AdminMenuItem[] {
@@ -68,6 +69,8 @@ function itemsReducer(state: AdminMenuItem[], action: ItemsAction): AdminMenuIte
       return state.map((item) =>
         item.id === action.id ? { ...item, inStock: true, needsReview: false } : item
       );
+    case "DELETE_CATEGORY_ITEMS":
+      return state.filter((item) => item.categoryId !== action.categoryId);
     default:
       return state;
   }
@@ -85,6 +88,8 @@ export interface UseAdminState {
   categories: AdminCategoryWithCount[];
   selectedCategoryId: string;
   selectCategory: (categoryId: string) => void;
+  addCategory: (name: string) => boolean;
+  deleteCategory: () => void;
   searchText: string;
   setSearchText: (text: string) => void;
   activeFilterId: AdminFilterId;
@@ -117,6 +122,7 @@ export interface UseAdminState {
  */
 export function useAdminState(): UseAdminState {
   const [items, dispatch] = useReducer(itemsReducer, ADMIN_MENU_ITEMS);
+  const [categoryList, setCategoryList] = useState<AdminCategory[]>(ADMIN_CATEGORIES);
   const [selectedCategoryId, setSelectedCategoryId] = useState<string>(
     DEFAULT_ADMIN_CATEGORY_ID
   );
@@ -130,11 +136,11 @@ export function useAdminState(): UseAdminState {
   /* Categories paired with a live item count derived from the collection. */
   const categories = useMemo<AdminCategoryWithCount[]>(
     () =>
-      ADMIN_CATEGORIES.map((cat) => ({
+      categoryList.map((cat) => ({
         ...cat,
         count: items.filter((item) => item.categoryId === cat.id).length,
       })),
-    [items]
+    [categoryList, items]
   );
 
   /* Filter the catalog by active category, filter chip, and search text. */
@@ -179,6 +185,55 @@ export function useAdminState(): UseAdminState {
     },
     [items]
   );
+
+  /** Add a category to this local catalog and immediately make it active. */
+  const addCategory = useCallback(
+    (name: string) => {
+      const trimmedName = name.trim();
+      if (!trimmedName) {
+        setFeedback("Enter a category name first.");
+        return false;
+      }
+
+      if (categoryList.some((category) => category.name.toLowerCase() === trimmedName.toLowerCase())) {
+        setFeedback(`"${trimmedName}" already exists.`);
+        return false;
+      }
+
+      const baseId = trimmedName
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-|-$/g, "") || "category";
+      const id = `${baseId}-${Date.now()}`;
+      setCategoryList((current) => [...current, { id, name: trimmedName }]);
+      setSelectedCategoryId(id);
+      setSelectedItemId(null);
+      setSearchText("");
+      setActiveFilterId("all");
+      setFeedback(`Added "${trimmedName}".`);
+      return true;
+    },
+    [categoryList]
+  );
+
+  /** Remove the selected category and its local-only items after UI confirmation. */
+  const deleteCategory = useCallback(() => {
+    const category = categoryList.find((current) => current.id === selectedCategoryId);
+    if (!category) return;
+    if (categoryList.length === 1) {
+      setFeedback("Add another category before deleting the last one.");
+      return;
+    }
+
+    const remainingCategories = categoryList.filter((current) => current.id !== category.id);
+    setCategoryList(remainingCategories);
+    dispatch({ type: "DELETE_CATEGORY_ITEMS", categoryId: category.id });
+
+    const nextCategory = remainingCategories[0];
+    setSelectedCategoryId(nextCategory?.id ?? "");
+    setSelectedItemId(items.find((item) => item.categoryId === nextCategory?.id)?.id ?? null);
+    setFeedback(`Deleted "${category.name}" and its ${items.filter((item) => item.categoryId === category.id).length} local item(s).`);
+  }, [categoryList, items, selectedCategoryId]);
 
   const setFilter = useCallback((filterId: AdminFilterId) => {
     setActiveFilterId(filterId);
@@ -248,6 +303,8 @@ export function useAdminState(): UseAdminState {
     categories,
     selectedCategoryId,
     selectCategory,
+    addCategory,
+    deleteCategory,
     searchText,
     setSearchText,
     activeFilterId,
