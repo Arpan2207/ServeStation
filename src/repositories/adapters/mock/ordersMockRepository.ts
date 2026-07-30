@@ -72,7 +72,7 @@ export function createMockOrdersRepository(): OrdersRepository {
       return canonicalStore.find((order) => order.id === id);
     },
 
-    createOrder(input): CanonicalOrder {
+    async createOrder(input): Promise<CanonicalOrder> {
       const order = createSubmittedOrder(input);
       canonicalStore.push(order);
       return order;

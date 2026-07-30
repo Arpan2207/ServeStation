@@ -78,8 +78,8 @@ export interface OrdersRepository {
 
   /* ── Guarded writes (the only ways to mutate an order) ── */
 
-  /** Create a `submitted` order from a local cart snapshot. */
-  createOrder(input: OrderCreateInput): CanonicalOrder;
+  /** Create and persist a `submitted` order from a local cart snapshot. */
+  createOrder(input: OrderCreateInput): Promise<CanonicalOrder>;
   /**
    * Move an order along an approved path only. Throws when the transition is
    * invalid (e.g. completed → preparing) or the order is missing.

@@ -42,4 +42,6 @@ export const colors = {
   /* ── Semantic / misc ─────────────────────────────────── */
   white: "#ffffff",
   transparent: "transparent",
+  /** Error/danger accent, tuned to read on the dark cart sidebar too. */
+  danger: "#ff8a6a",
 } as const;
