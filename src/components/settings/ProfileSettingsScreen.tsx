@@ -3,50 +3,79 @@
  * UI-only profile and store preferences screen that follows the settings theme.
  */
 
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import { Pressable, ScrollView, Switch, Text, View } from "react-native";
 import { useRouter } from "expo-router";
 import { StyleSheet } from "react-native-unistyles";
 
 import { Screen } from "@/components/ui/Screen";
+import { NoteDialog } from "@/components/primitives/NoteDialog";
 import { colors } from "@/theme/colors";
 
-const ACCOUNT_FIELDS = [
-  { label: "Owner name", value: "Avery Stone" },
-  { label: "Email", value: "avery@servestation.local" },
-  { label: "Phone", value: "(415) 555-0184" },
+/** Editable text values displayed throughout the local profile screen. */
+interface ProfileDraft {
+  ownerName: string;
+  email: string;
+  phone: string;
+  businessName: string;
+  location: string;
+  storeId: string;
+  staffProfileVisibility: string;
+  receiptSenderName: string;
+  defaultDashboard: string;
+}
+
+/** A text field that can be edited through the shared dialog. */
+type ProfileFieldKey = keyof ProfileDraft;
+
+/** Metadata for one editable profile setting row. */
+interface ProfileField {
+  key: ProfileFieldKey;
+  label: string;
+}
+
+const ACCOUNT_FIELDS: ProfileField[] = [
+  { key: "ownerName", label: "Owner name" },
+  { key: "email", label: "Email" },
+  { key: "phone", label: "Phone" },
 ];
 
-const STORE_FIELDS = [
-  { label: "Business name", value: "ServeStation Coffee" },
-  { label: "Location", value: "Mission District, San Francisco" },
-  { label: "Store ID", value: "KSK-1042" },
+const STORE_FIELDS: ProfileField[] = [
+  { key: "businessName", label: "Business name" },
+  { key: "location", label: "Location" },
+  { key: "storeId", label: "Store ID" },
 ];
 
-const QUICK_STATS = [
-  { label: "Role", value: "Owner" },
-  { label: "Last sync", value: "2 min ago" },
-  { label: "Plan", value: "Pro" },
+const ACCESS_ITEMS: ProfileField[] = [
+  { key: "staffProfileVisibility", label: "Staff profile visibility" },
+  { key: "receiptSenderName", label: "Receipt sender name" },
+  { key: "defaultDashboard", label: "Default dashboard" },
 ];
 
-const ACCESS_ITEMS = [
-  { label: "Staff profile visibility", value: "Managers only" },
-  { label: "Receipt sender name", value: "Store display name" },
-  { label: "Default dashboard", value: "POS workspace" },
-];
+const INITIAL_PROFILE: ProfileDraft = {
+  ownerName: "Avery Stone",
+  email: "avery@servestation.local",
+  phone: "(415) 555-0184",
+  businessName: "ServeStation Coffee",
+  location: "Mission District, San Francisco",
+  storeId: "KSK-1042",
+  staffProfileVisibility: "Managers only",
+  receiptSenderName: "Store display name",
+  defaultDashboard: "POS workspace",
+};
 
 /**
- * Displays a static profile field row for the UI-only account sections.
+ * Displays a pressable profile field row that opens the shared text editor.
  */
-function FieldRow({ label, value }: { label: string; value: string }) {
+function FieldRow({ label, value, onPress }: { label: string; value: string; onPress: () => void }) {
   return (
-    <View style={styles.fieldRow}>
+    <Pressable style={styles.fieldRow} onPress={onPress}>
       <View style={styles.fieldCopy}>
         <Text style={styles.fieldLabel}>{label}</Text>
         <Text style={styles.fieldValue}>{value}</Text>
       </View>
       <Text style={styles.editLabel}>Edit</Text>
-    </View>
+    </Pressable>
   );
 }
 
@@ -83,26 +112,68 @@ function PreferenceToggle({
 }
 
 /**
- * Shows one static access preference row in the profile settings panel.
+ * Shows one pressable access preference row in the profile settings panel.
  */
-function AccessRow({ label, value }: { label: string; value: string }) {
+function AccessRow({ label, value, onPress }: { label: string; value: string; onPress: () => void }) {
   return (
-    <View style={styles.accessRow}>
+    <Pressable style={styles.accessRow} onPress={onPress}>
       <Text style={styles.accessLabel}>{label}</Text>
-      <Text style={styles.accessValue}>{value}</Text>
-    </View>
+      <View style={styles.accessValueWrap}>
+        <Text style={styles.accessValue}>{value}</Text>
+        <Text style={styles.editLabel}>Edit</Text>
+      </View>
+    </Pressable>
   );
 }
 
 /**
- * Renders the UI-only profile settings screen with local notification
- * preferences and static account/store profile data.
+ * Renders the frontend-only profile settings screen with editable local
+ * account, store, access, and notification preferences.
  */
 export function ProfileSettingsScreen() {
   const router = useRouter();
+  const [profile, setProfile] = useState<ProfileDraft>(INITIAL_PROFILE);
+  const [editingField, setEditingField] = useState<ProfileField | null>(null);
+  const [fieldValue, setFieldValue] = useState("");
   const [orderAlerts, setOrderAlerts] = useState(true);
   const [dailyDigest, setDailyDigest] = useState(true);
   const [securityPrompts, setSecurityPrompts] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  /** Derived values keep the profile hero and stats current after local edits. */
+  const quickStats = useMemo(
+    () => [
+      { label: "Role", value: "Owner" },
+      { label: "Last sync", value: saved ? "Just now" : "2 min ago" },
+      { label: "Plan", value: "Pro" },
+    ],
+    [saved]
+  );
+  const avatarInitials = useMemo(
+    () =>
+      profile.ownerName
+        .split(" ")
+        .filter(Boolean)
+        .map((part) => part[0])
+        .join("")
+        .slice(0, 2)
+        .toUpperCase() || "?",
+    [profile.ownerName]
+  );
+
+  /** Open the shared dialog with the current value of a selected field. */
+  const openFieldEditor = (field: ProfileField) => {
+    setEditingField(field);
+    setFieldValue(profile[field.key]);
+  };
+
+  /** Apply one dialog edit to the local profile draft. */
+  const saveField = () => {
+    if (!editingField) return;
+    setProfile((current) => ({ ...current, [editingField.key]: fieldValue.trim() }));
+    setEditingField(null);
+    setSaved(false);
+  };
 
   return (
     <Screen>
@@ -115,8 +186,8 @@ export function ProfileSettingsScreen() {
               </Pressable>
               <Text style={styles.title}>Profile settings</Text>
             </View>
-            <Pressable style={styles.saveButton}>
-              <Text style={styles.saveLabel}>Save changes</Text>
+            <Pressable style={styles.saveButton} onPress={() => setSaved(true)}>
+              <Text style={styles.saveLabel}>{saved ? "Changes saved" : "Save changes"}</Text>
             </Pressable>
           </View>
 
@@ -127,11 +198,11 @@ export function ProfileSettingsScreen() {
           >
             <View style={styles.profileHero}>
               <View style={styles.avatar}>
-                <Text style={styles.avatarText}>AS</Text>
+                <Text style={styles.avatarText}>{avatarInitials}</Text>
               </View>
               <View style={styles.profileCopy}>
-                <Text style={styles.profileName}>Avery Stone</Text>
-                <Text style={styles.profileMeta}>Owner account - ServeStation Coffee</Text>
+                <Text style={styles.profileName}>{profile.ownerName}</Text>
+                <Text style={styles.profileMeta}>Owner account - {profile.businessName}</Text>
               </View>
               <View style={styles.statusPill}>
                 <Text style={styles.statusText}>Verified</Text>
@@ -139,7 +210,7 @@ export function ProfileSettingsScreen() {
             </View>
 
             <View style={styles.statsRow}>
-              {QUICK_STATS.map((stat) => (
+              {quickStats.map((stat) => (
                 <View key={stat.label} style={styles.statCard}>
                   <Text style={styles.statLabel}>{stat.label}</Text>
                   <Text style={styles.statValue}>{stat.value}</Text>
@@ -155,7 +226,12 @@ export function ProfileSettingsScreen() {
                     <Text style={styles.panelBadge}>Primary</Text>
                   </View>
                   {ACCOUNT_FIELDS.map((field) => (
-                    <FieldRow key={field.label} label={field.label} value={field.value} />
+                    <FieldRow
+                      key={field.key}
+                      label={field.label}
+                      value={profile[field.key]}
+                      onPress={() => openFieldEditor(field)}
+                    />
                   ))}
                 </View>
 
@@ -165,7 +241,12 @@ export function ProfileSettingsScreen() {
                     <Text style={styles.panelBadge}>Public</Text>
                   </View>
                   {STORE_FIELDS.map((field) => (
-                    <FieldRow key={field.label} label={field.label} value={field.value} />
+                    <FieldRow
+                      key={field.key}
+                      label={field.label}
+                      value={profile[field.key]}
+                      onPress={() => openFieldEditor(field)}
+                    />
                   ))}
                 </View>
               </View>
@@ -177,31 +258,57 @@ export function ProfileSettingsScreen() {
                     label="Order alerts"
                     description="Surface new and delayed orders on this device."
                     value={orderAlerts}
-                    onChange={() => setOrderAlerts((current) => !current)}
+                    onChange={() => {
+                      setOrderAlerts((current) => !current);
+                      setSaved(false);
+                    }}
                   />
                   <PreferenceToggle
                     label="Daily digest"
                     description="Send a closing summary to the account email."
                     value={dailyDigest}
-                    onChange={() => setDailyDigest((current) => !current)}
+                    onChange={() => {
+                      setDailyDigest((current) => !current);
+                      setSaved(false);
+                    }}
                   />
                   <PreferenceToggle
                     label="Security prompts"
                     description="Ask for confirmation before sensitive admin actions."
                     value={securityPrompts}
-                    onChange={() => setSecurityPrompts((current) => !current)}
+                    onChange={() => {
+                      setSecurityPrompts((current) => !current);
+                      setSaved(false);
+                    }}
                   />
                 </View>
 
                 <View style={styles.panel}>
                   <Text style={styles.panelTitle}>Access preferences</Text>
                   {ACCESS_ITEMS.map((item) => (
-                    <AccessRow key={item.label} label={item.label} value={item.value} />
+                    <AccessRow
+                      key={item.key}
+                      label={item.label}
+                      value={profile[item.key]}
+                      onPress={() => openFieldEditor(item)}
+                    />
                   ))}
                 </View>
               </View>
             </View>
           </ScrollView>
+
+          <NoteDialog
+            visible={editingField !== null}
+            title={`Edit ${editingField?.label ?? "profile field"}`}
+            description="Changes stay on this device until you save your profile."
+            value={fieldValue}
+            placeholder={editingField?.label ?? "Enter a value"}
+            saveLabel="Save field"
+            onChangeText={setFieldValue}
+            onDismiss={() => setEditingField(null)}
+            onSave={saveField}
+          />
         </View>
       </View>
     </Screen>
@@ -500,5 +607,11 @@ const styles = StyleSheet.create((theme) => ({
     lineHeight: 20,
     color: theme.colors.textPrimary,
     fontWeight: "800",
+  },
+  accessValueWrap: {
+    flex: 1,
+    minWidth: 0,
+    alignItems: "flex-end",
+    gap: 4,
   },
 }));

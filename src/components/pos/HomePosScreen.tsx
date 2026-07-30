@@ -10,18 +10,22 @@
  */
 
 import React from "react";
-import { ScrollView, useWindowDimensions, View } from "react-native";
+import {
+  ActivityIndicator,
+  ScrollView,
+  Text,
+  useWindowDimensions,
+  View,
+} from "react-native";
 import { StyleSheet } from "react-native-unistyles";
 
+import { Button } from "@/components/ui/Button";
 import { Screen } from "@/components/ui/Screen";
 import { HStack } from "@/components/ui/Stack";
 import { usePosState } from "@/hooks/usePosState";
 import { formatCurrency } from "@/domain/money";
-import { menuRepository } from "@/repositories";
 import type { MenuItem } from "@/types/pos";
 
-/** Category list sourced through the repository boundary. */
-const CATEGORIES = menuRepository.getCategories();
 import { CartPanel } from "./CartPanel";
 import { CategoryBar } from "./CategoryBar";
 import { MenuItemCard } from "./MenuItemCard";
@@ -68,64 +72,96 @@ export function HomePosScreen() {
   // Build responsive grid rows from the filtered (category + search) items.
   const menuRows = chunkArray(pos.filteredItems, columns);
 
+  // Catalog is loaded asynchronously; gate the left pane on its status. Old
+  // data is preserved during a reload, so only fall back to these states when
+  // nothing has loaded yet.
+  const initialLoading = pos.catalogLoading && pos.categories.length === 0;
+  const errorState = !!pos.catalogError && pos.categories.length === 0;
+  const emptyState =
+    !initialLoading && !errorState && pos.filteredItems.length === 0;
+
   return (
     <Screen>
       <View style={styles.root}>
         {/* ── Left pane ── */}
         <View style={styles.leftPane}>
-          <CategoryBar
-            categories={CATEGORIES}
-            selectedCategoryId={pos.selectedCategoryId}
-            onSelectCategory={pos.selectCategory}
-            searchText={pos.searchText}
-            onSearchChange={pos.setSearchText}
-          />
-          <QuickTools />
+          {initialLoading ? (
+            <View style={styles.centerFill}>
+              <ActivityIndicator size="large" />
+              <Text style={styles.stateText}>Loading menu…</Text>
+            </View>
+          ) : errorState ? (
+            <View style={styles.centerFill}>
+              <Text style={styles.errorText}>{pos.catalogError}</Text>
+              <Button
+                label="Retry"
+                variant="outline"
+                onPress={pos.reloadCatalog}
+              />
+            </View>
+          ) : (
+            <>
+              <CategoryBar
+                categories={pos.categories}
+                selectedCategoryId={pos.selectedCategoryId}
+                onSelectCategory={pos.selectCategory}
+                searchText={pos.searchText}
+                onSearchChange={pos.setSearchText}
+              />
+              <QuickTools />
 
-          {/* Menu grid — scrollable, grows to fill remaining space */}
-          <ScrollView
-            style={styles.menuScroll}
-            contentContainerStyle={styles.menuContent}
-            showsVerticalScrollIndicator={false}
-          >
-            {menuRows.map((row, ri) => (
-              <HStack key={ri} gap={12}>
-                {row.map((item: MenuItem) => (
-                  <MenuItemCard
-                    key={item.id}
-                    name={item.name}
-                    price={formatCurrency(item.price)}
-                    selected={pos.selectedItem?.id === item.id}
-                    onSelect={() => pos.selectItem(item.id)}
-                    onAdd={() => pos.addItemToCart(item)}
-                  />
-                ))}
-                {/* Invisible spacers keep cards equally sized when a row is partial */}
-                {row.length < columns &&
-                  Array.from({ length: columns - row.length }).map((_, j) => (
-                    <View key={`spacer-${j}`} style={styles.spacer} />
-                  ))}
-              </HStack>
-            ))}
-          </ScrollView>
+              {/* Menu grid — scrollable, grows to fill remaining space */}
+              <ScrollView
+                style={styles.menuScroll}
+                contentContainerStyle={styles.menuContent}
+                showsVerticalScrollIndicator={false}
+              >
+                {emptyState ? (
+                  <View style={styles.centerFill}>
+                    <Text style={styles.stateText}>No items to show.</Text>
+                  </View>
+                ) : (
+                  menuRows.map((row, ri) => (
+                    <HStack key={ri} gap={12}>
+                      {row.map((item: MenuItem) => (
+                        <MenuItemCard
+                          key={item.id}
+                          name={item.name}
+                          price={formatCurrency(item.price)}
+                          selected={pos.selectedItem?.id === item.id}
+                          onSelect={() => pos.selectItem(item.id)}
+                          onAdd={() => pos.addItemToCart(item)}
+                        />
+                      ))}
+                      {/* Invisible spacers keep cards equally sized on partial rows */}
+                      {row.length < columns &&
+                        Array.from({ length: columns - row.length }).map((_, j) => (
+                          <View key={`spacer-${j}`} style={styles.spacer} />
+                        ))}
+                    </HStack>
+                  ))
+                )}
+              </ScrollView>
 
-          {/* Bottom editor — side-by-side on wide screens, stacked on narrow */}
-          <View
-            style={[
-              styles.bottomEditor,
-              editorStacked && styles.bottomEditorStacked,
-            ]}
-          >
-            <SelectedItemPanel
-              item={pos.selectedItem}
-              onAddToCart={pos.addSelectedToCart}
-            />
-            <UpsellGrid
-              modifiers={pos.selectedItem?.modifiers ?? []}
-              selectedModifierIds={pos.selectedModifierIds}
-              onToggleModifier={pos.toggleModifier}
-            />
-          </View>
+              {/* Bottom editor — side-by-side on wide screens, stacked on narrow */}
+              <View
+                style={[
+                  styles.bottomEditor,
+                  editorStacked && styles.bottomEditorStacked,
+                ]}
+              >
+                <SelectedItemPanel
+                  item={pos.selectedItem}
+                  onAddToCart={pos.addSelectedToCart}
+                />
+                <UpsellGrid
+                  modifiers={pos.selectedItem?.modifiers ?? []}
+                  selectedModifierIds={pos.selectedModifierIds}
+                  onToggleModifier={pos.toggleModifier}
+                />
+              </View>
+            </>
+          )}
         </View>
 
         {/* ── Right pane (cart) ── */}
@@ -191,5 +227,24 @@ const styles = StyleSheet.create((theme) => ({
   spacer: {
     flex: 1,
     minWidth: 0,
+  },
+  // Centered container for loading / error / empty states in the left pane.
+  centerFill: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: theme.spacing.xl,
+    padding: theme.spacing["3xl"],
+  },
+  stateText: {
+    fontFamily: theme.typography.fontFamily.body,
+    fontSize: theme.typography.size.md,
+    color: theme.colors.textSecondary,
+  },
+  errorText: {
+    fontFamily: theme.typography.fontFamily.body,
+    fontSize: theme.typography.size.md,
+    color: theme.colors.textPrimary,
+    textAlign: "center",
   },
 }));

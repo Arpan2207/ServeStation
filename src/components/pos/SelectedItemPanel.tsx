@@ -7,17 +7,18 @@
  * so the bottom-editor layout holds.
  */
 
-import React from "react";
+import React, { useState } from "react";
 import { Pressable, Text, View } from "react-native";
 import { StyleSheet } from "react-native-unistyles";
 import { Card } from "@/components/ui/Card";
+import { NoteDialog } from "@/components/primitives/NoteDialog";
 import type { MenuItem } from "@/types/pos";
 
 interface SelectedItemPanelProps {
   /** The currently selected item, or null when nothing is selected. */
   item: MenuItem | null;
   /** Add the selected item (with its modifiers) to the cart. */
-  onAddToCart: () => void;
+  onAddToCart: (note?: string) => void;
 }
 
 /**
@@ -25,6 +26,15 @@ interface SelectedItemPanelProps {
  * @param props The selected item and the add-to-cart handler.
  */
 export function SelectedItemPanel({ item, onAddToCart }: SelectedItemPanelProps) {
+  const [isNoteEditorOpen, setIsNoteEditorOpen] = useState(false);
+  const [note, setNote] = useState("");
+
+  /** Save the current instruction with the next cart line, then reset the editor. */
+  const addToOrder = () => {
+    onAddToCart(note);
+    setNote("");
+  };
+
   // Empty state — keeps the panel height stable when no item is selected.
   if (!item) {
     return (
@@ -49,13 +59,26 @@ export function SelectedItemPanel({ item, onAddToCart }: SelectedItemPanelProps)
       {/* Action row — "Add note" sits beside the kept "Add to order" button.
           Both share identical sizing (button base) with a consistent gap. */}
       <View style={styles.actions}>
-        <Pressable style={[styles.button, styles.noteButton]}>
+        <Pressable
+          style={[styles.button, styles.noteButton]}
+          onPress={() => setIsNoteEditorOpen(true)}
+        >
           <Text style={styles.noteLabel}>Add note</Text>
         </Pressable>
-        <Pressable style={[styles.button, styles.addButton]} onPress={onAddToCart}>
+        <Pressable style={[styles.button, styles.addButton]} onPress={addToOrder}>
           <Text style={styles.addLabel}>Add to order</Text>
         </Pressable>
       </View>
+
+      <NoteDialog
+        visible={isNoteEditorOpen}
+        title="Add a note"
+        description={`This instruction will be added to the next ${item.name} line.`}
+        value={note}
+        onChangeText={setNote}
+        onDismiss={() => setIsNoteEditorOpen(false)}
+        onSave={() => setIsNoteEditorOpen(false)}
+      />
     </Card>
   );
 }

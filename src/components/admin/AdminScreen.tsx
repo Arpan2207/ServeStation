@@ -8,11 +8,12 @@
  * useAdminState(). Nothing is persisted or sent to a backend.
  */
 
-import React from "react";
+import React, { useState } from "react";
 import { Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { StyleSheet } from "react-native-unistyles";
 
 import { Screen } from "@/components/ui/Screen";
+import { Button } from "@/components/ui/Button";
 import { useAdminState } from "@/hooks/useAdminState";
 import type { AdminCategoryWithCount } from "@/hooks/useAdminState";
 import { adminRepository } from "@/repositories";
@@ -27,16 +28,17 @@ const ADMIN_FILTER_CHIPS = adminRepository.getFilterChips();
 interface ModifierOptionDraft {
   id: string;
   label: string;
-  priceLabel: string;
+  /** Numeric dollar amount stored as editable text; 0.00 means Free. */
+  price: string;
 }
 
 const MODIFIER_OPTION_DRAFTS: ModifierOptionDraft[] = [
-  { id: "no-onions", label: "No onions", priceLabel: "Free" },
-  { id: "light-sauce", label: "Light sauce", priceLabel: "Free" },
-  { id: "extra-pickles", label: "Extra pickles", priceLabel: "+$0.50" },
-  { id: "gf-bun", label: "Gluten-free bun", priceLabel: "+$1.50" },
-  { id: "add-avocado", label: "Add avocado", priceLabel: "+$1.25" },
-  { id: "no-tomato", label: "No tomato", priceLabel: "Free" },
+  { id: "no-onions", label: "No onions", price: "0.00" },
+  { id: "light-sauce", label: "Light sauce", price: "0.00" },
+  { id: "extra-pickles", label: "Extra pickles", price: "0.50" },
+  { id: "gf-bun", label: "Gluten-free bun", price: "1.50" },
+  { id: "add-avocado", label: "Add avocado", price: "1.25" },
+  { id: "no-tomato", label: "No tomato", price: "0.00" },
 ];
 
 /* ── Small local helpers ─────────────────────────────── */
@@ -99,19 +101,38 @@ function EditableField({
 }
 
 /**
- * Static edit-looking option row used to design future modifier editing.
- * @param props Label and price text that should appear inside the option box.
+ * Editable local modifier-option capsule. A zero price means the option is
+ * free, while any decimal amount becomes its custom upcharge.
+ * @param props Option state and field-change handler.
  */
-function ModifierOptionBox({ option }: { option: ModifierOptionDraft }) {
+function ModifierOptionBox({
+  option,
+  onChange,
+}: {
+  option: ModifierOptionDraft;
+  onChange: (field: "label" | "price", value: string) => void;
+}) {
   return (
     <View style={styles.modifierOptionBox}>
       <View style={styles.modifierNameField}>
-        <Text style={styles.modifierOptionLabel} numberOfLines={1}>
-          {option.label}
-        </Text>
+        <TextInput
+          value={option.label}
+          onChangeText={(value) => onChange("label", value)}
+          placeholder="Option name"
+          placeholderTextColor={styles.placeholderColor.color}
+          style={styles.modifierOptionInput}
+        />
       </View>
       <View style={styles.modifierPriceField}>
-        <Text style={styles.modifierOptionPrice}>{option.priceLabel}</Text>
+        <Text style={styles.modifierPricePrefix}>$</Text>
+        <TextInput
+          value={option.price}
+          onChangeText={(value) => onChange("price", value)}
+          placeholder="0.00"
+          placeholderTextColor={styles.placeholderColor.color}
+          keyboardType="decimal-pad"
+          style={styles.modifierPriceInput}
+        />
       </View>
     </View>
   );
@@ -197,6 +218,9 @@ function AdminItemEditor({
   onMarkUnavailable,
   onMarkInStock,
   onPublish,
+  modifierOptions,
+  onChangeModifierOption,
+  onSaveModifiers,
 }: {
   item: AdminMenuItem;
   feedback: string | null;
@@ -204,6 +228,13 @@ function AdminItemEditor({
   onMarkUnavailable: () => void;
   onMarkInStock: () => void;
   onPublish: () => void;
+  modifierOptions: ModifierOptionDraft[];
+  onChangeModifierOption: (
+    optionId: string,
+    field: "label" | "price",
+    value: string
+  ) => void;
+  onSaveModifiers: () => void;
 }) {
   return (
     <>
@@ -244,14 +275,18 @@ function AdminItemEditor({
           <View style={styles.modifierHeaderCopy}>
             <Text style={styles.fieldLabel}>Modifier groups</Text>
           </View>
-          <Pressable style={styles.modifierAddGroupBtn}>
+          <Pressable style={styles.modifierAddGroupBtn} onPress={onSaveModifiers}>
             <Text style={styles.modifierAddGroupLabel}>Save</Text>
           </Pressable>
         </View>
 
         <View style={styles.modifierCapsuleGrid}>
-          {MODIFIER_OPTION_DRAFTS.map((option) => (
-            <ModifierOptionBox key={option.id} option={option} />
+          {modifierOptions.map((option) => (
+            <ModifierOptionBox
+              key={option.id}
+              option={option}
+              onChange={(field, value) => onChangeModifierOption(option.id, field, value)}
+            />
           ))}
         </View>
       </View>
@@ -280,6 +315,43 @@ function AdminItemEditor({
 export function AdminScreen() {
   const admin = useAdminState();
   const { selectedItem } = admin;
+  const [modifierOptions, setModifierOptions] = useState(MODIFIER_OPTION_DRAFTS);
+  const [modifierSaveMessage, setModifierSaveMessage] = useState<string | null>(null);
+  const [newCategoryName, setNewCategoryName] = useState("");
+  const [isAddingCategory, setIsAddingCategory] = useState(false);
+  const [isConfirmingCategoryDelete, setIsConfirmingCategoryDelete] = useState(false);
+  const selectedCategory = admin.categories.find((category) => category.id === admin.selectedCategoryId);
+
+  /** Update a single modifier option field in the local editor draft. */
+  const updateModifierOption = (
+    optionId: string,
+    field: "label" | "price",
+    value: string
+  ) => {
+    setModifierSaveMessage(null);
+    setModifierOptions((options) =>
+      options.map((option) => (option.id === optionId ? { ...option, [field]: value } : option))
+    );
+  };
+
+  /** Keep modifier editing local-only while providing clear Save feedback. */
+  const saveModifiers = () => {
+    // This design pass deliberately does not persist modifier data yet.
+    // Save acknowledges the current local selections without changing the catalog.
+    setModifierSaveMessage("Modifier options saved locally.");
+  };
+
+  const addCategory = () => {
+    if (admin.addCategory(newCategoryName)) {
+      setNewCategoryName("");
+      setIsAddingCategory(false);
+    }
+  };
+
+  const deleteCategory = () => {
+    admin.deleteCategory();
+    setIsConfirmingCategoryDelete(false);
+  };
 
   return (
     <Screen>
@@ -325,6 +397,35 @@ export function AdminScreen() {
           <View style={styles.content}>
             {/* ── Left: Categories Panel ── */}
             <View style={styles.categoriesPanel}>
+              <View style={styles.categoriesHeader}>
+                <Text style={styles.categoriesTitle}>Categories</Text>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Add category"
+                  onPress={() => {
+                    setIsAddingCategory((current) => !current);
+                    setIsConfirmingCategoryDelete(false);
+                  }}
+                  style={styles.categoryAddButton}
+                >
+                  <Text style={styles.categoryAddLabel}>{isAddingCategory ? "Close" : "Add"}</Text>
+                </Pressable>
+              </View>
+              {isAddingCategory && (
+                <View style={styles.categoryForm}>
+                  <TextInput
+                    value={newCategoryName}
+                    onChangeText={setNewCategoryName}
+                    onSubmitEditing={addCategory}
+                    placeholder="e.g. Sides"
+                    placeholderTextColor={styles.placeholderColor.color}
+                    style={styles.categoryInput}
+                    autoFocus
+                    returnKeyType="done"
+                  />
+                  <Button label="Create" onPress={addCategory} style={styles.categoryCreateButton} />
+                </View>
+              )}
               <ScrollView
                 style={styles.columnScroll}
                 contentContainerStyle={styles.categoriesContent}
@@ -339,6 +440,35 @@ export function AdminScreen() {
                   />
                 ))}
               </ScrollView>
+              {selectedCategory && (
+                <View style={styles.categoryDeleteArea}>
+                  {isConfirmingCategoryDelete ? (
+                    <>
+                      <Text style={styles.categoryDeleteCopy}>
+                        Remove {selectedCategory.name} and its {selectedCategory.count} local item(s)?
+                      </Text>
+                      <View style={styles.categoryDeleteActions}>
+                        <Pressable onPress={() => setIsConfirmingCategoryDelete(false)} style={styles.categoryCancelButton}>
+                          <Text style={styles.categoryCancelLabel}>Cancel</Text>
+                        </Pressable>
+                        <Pressable onPress={deleteCategory} style={styles.categoryDeleteButton}>
+                          <Text style={styles.categoryDeleteLabel}>Delete</Text>
+                        </Pressable>
+                      </View>
+                    </>
+                  ) : (
+                    <Pressable
+                      onPress={() => {
+                        setIsConfirmingCategoryDelete(true);
+                        setIsAddingCategory(false);
+                      }}
+                      style={styles.categoryRemoveButton}
+                    >
+                      <Text style={styles.categoryRemoveLabel}>Delete {selectedCategory.name}</Text>
+                    </Pressable>
+                  )}
+                </View>
+              )}
             </View>
 
             {/* ── Middle: Item Browser ── */}
@@ -375,11 +505,14 @@ export function AdminScreen() {
                 {selectedItem ? (
                   <AdminItemEditor
                     item={selectedItem}
-                    feedback={admin.feedback}
+                    feedback={modifierSaveMessage ?? admin.feedback}
                     onChangeField={admin.updateField}
                     onMarkUnavailable={admin.markUnavailable}
                     onMarkInStock={admin.markInStock}
                     onPublish={admin.publishItem}
+                    modifierOptions={modifierOptions}
+                    onChangeModifierOption={updateModifierOption}
+                    onSaveModifiers={saveModifiers}
                   />
                 ) : (
                   /* Empty editor state keeps the right column layout stable */
@@ -527,9 +660,120 @@ const styles = StyleSheet.create((theme) => ({
     flexBasis: 0,
     minWidth: 0,
   },
+  categoriesHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 10,
+    marginBottom: 12,
+  },
+  categoriesTitle: {
+    flex: 1,
+    fontFamily: theme.typography.fontFamily.label,
+    fontSize: 16,
+    lineHeight: 22,
+    color: theme.colors.textPrimary,
+    fontWeight: "700",
+  },
+  categoryAddButton: {
+    height: 34,
+    borderRadius: 12,
+    backgroundColor: theme.colors.primaryLight,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 12,
+  },
+  categoryAddLabel: {
+    fontFamily: theme.typography.fontFamily.label,
+    fontSize: 13,
+    color: theme.colors.textAccent,
+    fontWeight: "700",
+  },
+  categoryForm: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: "#f6f0e5",
+    borderRadius: 18,
+    padding: 10,
+    marginBottom: 12,
+  },
+  categoryInput: {
+    flex: 1,
+    minWidth: 0,
+    height: 38,
+    borderRadius: 12,
+    backgroundColor: theme.colors.white,
+    paddingHorizontal: 12,
+    fontFamily: theme.typography.fontFamily.label,
+    fontSize: 13,
+    color: theme.colors.textPrimary,
+  },
+  categoryCreateButton: {
+    paddingVertical: 9,
+    paddingHorizontal: 10,
+  },
   categoriesContent: {
     gap: 12,
     paddingBottom: 14,
+  },
+  categoryDeleteArea: {
+    backgroundColor: "#f6f0e5",
+    borderRadius: 18,
+    padding: 10,
+    gap: 8,
+  },
+  categoryRemoveButton: {
+    minHeight: 38,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: theme.colors.borderSubtle,
+  },
+  categoryRemoveLabel: {
+    fontFamily: theme.typography.fontFamily.label,
+    fontSize: 13,
+    color: theme.colors.textSecondary,
+    fontWeight: "700",
+  },
+  categoryDeleteCopy: {
+    fontFamily: theme.typography.fontFamily.label,
+    fontSize: 12,
+    lineHeight: 17,
+    color: theme.colors.textSecondary,
+  },
+  categoryDeleteActions: {
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    gap: 8,
+  },
+  categoryCancelButton: {
+    height: 34,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 12,
+  },
+  categoryCancelLabel: {
+    fontFamily: theme.typography.fontFamily.label,
+    fontSize: 12,
+    color: theme.colors.textSecondary,
+    fontWeight: "700",
+  },
+  categoryDeleteButton: {
+    height: 34,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 12,
+    backgroundColor: theme.colors.textPrimary,
+  },
+  categoryDeleteLabel: {
+    fontFamily: theme.typography.fontFamily.label,
+    fontSize: 12,
+    color: theme.colors.white,
+    fontWeight: "700",
   },
   categoryCard: {
     backgroundColor: "#f6f0e5",
@@ -747,21 +991,32 @@ const styles = StyleSheet.create((theme) => ({
     height: 34,
     borderRadius: 13,
     backgroundColor: theme.colors.primaryLight,
+    flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
     paddingHorizontal: 10,
   },
-  modifierOptionLabel: {
+  modifierOptionInput: {
+    flex: 1,
     fontFamily: theme.typography.fontFamily.label,
     fontSize: 13,
     color: theme.colors.textPrimary,
     fontWeight: "600",
+    padding: 0,
   },
-  modifierOptionPrice: {
+  modifierPricePrefix: {
     fontFamily: theme.typography.fontFamily.label,
     fontSize: 13,
     color: theme.colors.primary,
     fontWeight: "700",
+  },
+  modifierPriceInput: {
+    flex: 1,
+    minWidth: 0,
+    fontFamily: theme.typography.fontFamily.label,
+    fontSize: 13,
+    color: theme.colors.primary,
+    fontWeight: "700",
+    padding: 0,
   },
 
   /* Chips */
