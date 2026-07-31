@@ -1,7 +1,10 @@
 /**
- * Static, frontend-only mock data for the Orders screens.
- * Single source of truth shared by the Orders List and Order Detail screens,
- * replacing the inline arrays that previously lived inside the components.
+ * Static, frontend-only seed data for the Orders screens.
+ *
+ * Consumed only by the mock orders adapter (`ordersMockRepository`), which maps
+ * these view rows into canonical orders to seed its in-memory store when
+ * Supabase is not configured. Screens read orders through the repository
+ * boundary, never from this module directly.
  */
 
 import type { Order } from "@/types/orders";
@@ -124,25 +127,3 @@ export const ORDERS: Order[] = [
     prepTime: "Completed",
   },
 ];
-
-/* ── Helpers ─────────────────────────────────────────── */
-
-/**
- * Build the compact meta line for a list row.
- * @param order The order to summarize.
- * @returns A string like "3 items · dine-in · created 2 min ago".
- */
-export function buildOrderMeta(order: Order): string {
-  const itemWord = order.items === 1 ? "item" : "items";
-  return `${order.items} ${itemWord} · ${order.orderType} · ${order.timing}`;
-}
-
-/**
- * Look up a single order by its id.
- * @param id The order id (also used as the route param).
- * @returns The matching order, or undefined if not found.
- */
-export function getOrderById(id: string | undefined): Order | undefined {
-  if (!id) return undefined;
-  return ORDERS.find((order) => order.id === id);
-}

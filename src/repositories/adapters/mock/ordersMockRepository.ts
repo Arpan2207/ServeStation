@@ -1,33 +1,31 @@
 /**
  * Mock adapter for {@link OrdersRepository}.
  *
- * Owns access to the static Orders mock data so hooks/screens no longer import
- * `src/lib/mockOrderData` directly. It serves the legacy view shapes to the UI
- * and canonical orders (via the order mapper) for backend/reporting code.
+ * Backed by a small in-memory canonical store seeded from the static Orders
+ * mock views, plus the pure domain lifecycle helpers. This lets the app run
+ * (and the reads/writes behave realistically) without Supabase configured, and
+ * it enforces exactly the same rules the Supabase adapter will (the DB enforces
+ * them via `apply_order_status_transition`).
  *
- * The guarded write operations (create / transition / cancel) are backed by a
- * small in-memory canonical store and the pure domain lifecycle helpers, so the
- * mock enforces exactly the same rules the future Supabase adapter will (the DB
- * enforces them via `apply_order_status_transition`). This keeps the contract
- * honest and testable before any network code exists.
+ * All reads are async to match the interface (the Supabase adapter fetches over
+ * the network); here they simply resolve immediately.
  */
 
-import { buildOrderMeta, getOrderById, ORDERS } from "@/lib/mockOrderData";
+import { ORDERS } from "@/lib/mockOrderData";
 import { orderViewToCanonical } from "@/mappers/orderMappers";
 import {
   cancelOrder as cancelOrderDomain,
-  createSubmittedOrder,
+  createOrder as buildOrder,
   isTerminalOrderStatus,
-  transitionOrder as transitionOrderDomain,
+  markOrderPaid as markOrderPaidDomain,
   type Order as CanonicalOrder,
 } from "@/domain/orders";
 import type { OrdersRepository } from "@/repositories/types";
 
 /** Build the mock-backed orders repository. */
 export function createMockOrdersRepository(): OrdersRepository {
-  /* Seed a mutable canonical store from the static mock views. This lets the
-     write operations behave realistically (create/transition/cancel) without a
-     backend, while reads for the current UI still use the original view data. */
+  /* Seed a mutable canonical store from the static mock views so the queue
+     reads and write operations behave realistically without a backend. */
   const canonicalStore: CanonicalOrder[] = ORDERS.map((order) =>
     orderViewToCanonical(order)
   );
@@ -39,51 +37,40 @@ export function createMockOrdersRepository(): OrdersRepository {
     return index;
   }
 
-  return {
-    getOrders() {
-      return ORDERS;
-    },
-    getOrderById(id) {
-      return getOrderById(id);
-    },
-    getOrderMeta(order) {
-      return buildOrderMeta(order);
-    },
+  /** Filter the store by open/closed queue and optional store scope. */
+  function queue(closed: boolean, storeId?: string): CanonicalOrder[] {
+    return canonicalStore.filter(
+      (order) =>
+        isTerminalOrderStatus(order.status) === closed &&
+        (storeId === undefined || order.storeId === storeId)
+    );
+  }
 
-    getCanonicalOrders(): CanonicalOrder[] {
-      return [...canonicalStore];
+  return {
+    async getActiveOrders(storeId): Promise<CanonicalOrder[]> {
+      return queue(false, storeId);
     },
-    getActiveOrders(storeId): CanonicalOrder[] {
-      return canonicalStore.filter(
-        (order) =>
-          !isTerminalOrderStatus(order.status) &&
-          (storeId === undefined || order.storeId === storeId)
-      );
+    async getOrderHistory(storeId): Promise<CanonicalOrder[]> {
+      return queue(true, storeId);
     },
-    getOrderHistory(storeId): CanonicalOrder[] {
-      return canonicalStore.filter(
-        (order) =>
-          isTerminalOrderStatus(order.status) &&
-          (storeId === undefined || order.storeId === storeId)
-      );
-    },
-    getCanonicalOrderById(id): CanonicalOrder | undefined {
+    async getCanonicalOrderById(id): Promise<CanonicalOrder | undefined> {
       if (!id) return undefined;
       return canonicalStore.find((order) => order.id === id);
     },
 
     async createOrder(input): Promise<CanonicalOrder> {
-      const order = createSubmittedOrder(input);
-      canonicalStore.push(order);
+      const order = buildOrder(input);
+      // Newest first, matching the Supabase adapter's created_at desc ordering.
+      canonicalStore.unshift(order);
       return order;
     },
-    transitionOrder(id, to): CanonicalOrder {
+    async markOrderPaid(id): Promise<CanonicalOrder> {
       const index = requireIndex(id);
-      const next = transitionOrderDomain(canonicalStore[index], to);
+      const next = markOrderPaidDomain(canonicalStore[index]);
       canonicalStore[index] = next;
       return next;
     },
-    cancelOrder(id, reason): CanonicalOrder {
+    async cancelOrder(id, reason): Promise<CanonicalOrder> {
       const index = requireIndex(id);
       const next = cancelOrderDomain(canonicalStore[index], reason);
       canonicalStore[index] = next;

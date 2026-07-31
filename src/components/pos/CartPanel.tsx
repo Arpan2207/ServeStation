@@ -13,6 +13,7 @@ import { StyleSheet } from "react-native-unistyles";
 import { Chip } from "@/components/ui/Chip";
 import { Button } from "@/components/ui/Button";
 import { formatCurrency } from "@/domain/money";
+import type { PlacingAction } from "@/hooks/usePosState";
 import type { CartLine, OrderTotals, OrderType } from "@/types/pos";
 
 /** Static, cosmetic secondary actions (no behavior in this phase). */
@@ -29,10 +30,13 @@ interface CartPanelProps {
   onIncrement: (lineId: string) => void;
   onDecrement: (lineId: string) => void;
   totals: OrderTotals;
-  onPlaceOrder: () => void;
-  /** True while an order is being persisted. */
-  placingOrder: boolean;
-  /** Error message from the last place-order attempt, if any. */
+  /** Save the cart as an unpaid, open order (Open queue). */
+  onSaveOrder: () => void;
+  /** Charge the cart now, creating a paid, closed order (Closed queue). */
+  onChargeOrder: () => void;
+  /** Which submit action is in flight, else null. */
+  placingAction: PlacingAction;
+  /** Error message from the last submit attempt, if any. */
   placeError: string | null;
   /** Confirmation summary from the last successful order, if any. */
   lastPlacedSummary: string | null;
@@ -51,12 +55,15 @@ export function CartPanel({
   onIncrement,
   onDecrement,
   totals,
-  onPlaceOrder,
-  placingOrder,
+  onSaveOrder,
+  onChargeOrder,
+  placingAction,
   placeError,
   lastPlacedSummary,
 }: CartPanelProps) {
   const isEmpty = cart.length === 0;
+  // While any submit is running, both actions are disabled to avoid double taps.
+  const busy = placingAction !== null;
 
   return (
     <View style={styles.sidebar}>
@@ -136,19 +143,33 @@ export function CartPanel({
         <TotalRow label="Tax" value={formatCurrency(totals.tax)} />
         <TotalRow label="Total" value={formatCurrency(totals.total)} />
 
-        {/* Place-order feedback: error takes precedence over the success line. */}
+        {/* Submit feedback: error takes precedence over the success line. */}
         {placeError ? (
           <Text style={styles.errorText}>{placeError}</Text>
         ) : lastPlacedSummary ? (
           <Text style={styles.successText}>{lastPlacedSummary}</Text>
         ) : null}
 
-        <Button
-          label={placingOrder ? "Placing order…" : "Place order"}
-          variant="primary"
-          style={styles.placeBtn}
-          onPress={onPlaceOrder}
-        />
+        {/* Two submit actions: Save (unpaid → Open queue) and Charge (paid →
+            Closed queue). While one runs, both are guarded against re-entry. */}
+        <View style={styles.submitRow}>
+          <Button
+            label={placingAction === "save" ? "Saving…" : "Save order"}
+            variant="ghost"
+            style={styles.saveBtn}
+            onPress={busy ? () => {} : onSaveOrder}
+          />
+          <Button
+            label={
+              placingAction === "charge"
+                ? "Charging…"
+                : `Charge ${formatCurrency(totals.total)}`
+            }
+            variant="primary"
+            style={styles.chargeBtn}
+            onPress={busy ? () => {} : onChargeOrder}
+          />
+        </View>
       </View>
     </View>
   );
@@ -374,8 +395,18 @@ const styles = StyleSheet.create((theme) => ({
     fontSize: theme.typography.size.base,
     color: theme.colors.textOnPrimary,
   },
-  placeBtn: {
+  submitRow: {
     marginTop: 4,
+    flexDirection: "row",
+    gap: 8,
+  },
+  saveBtn: {
+    flex: 1,
+    justifyContent: "center",
+    paddingVertical: 16,
+  },
+  chargeBtn: {
+    flex: 1.4,
   },
   errorText: {
     fontFamily: theme.typography.fontFamily.body,

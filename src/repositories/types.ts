@@ -12,7 +12,6 @@ import type { Catalog } from "@/domain/menu";
 import type {
   Order as CanonicalOrder,
   OrderCreateInput,
-  OrderStatus,
 } from "@/domain/orders";
 import type {
   AdminCategory,
@@ -20,7 +19,6 @@ import type {
   AdminMenuItem,
   AdminModifierGroup,
 } from "@/types/admin";
-import type { Order as OrderView } from "@/types/orders";
 import type { MenuCategory, MenuItem } from "@/types/pos";
 
 /**
@@ -50,43 +48,39 @@ export interface MenuRepository {
  * Orders data boundary.
  *
  * The operations are intentionally shaped around the reviewed order contract
- * (create-from-cart, queue reads, guarded transitions, cancellation) rather
- * than exposing a generic `updateOrder(anyFields)` — so invalid lifecycle
- * changes are hard to express and the Supabase adapter can mirror the guarded
+ * (create-from-cart, queue reads, mark-paid, cancellation) rather than exposing
+ * a generic `updateOrder(anyFields)` — so invalid lifecycle changes are hard to
+ * express and the Supabase adapter can mirror the guarded
  * `apply_order_status_transition` RPC one-to-one.
+ *
+ * Reads return the canonical domain model (numeric money, status, timestamps);
+ * the UI maps them to its view shape via `canonicalOrderToView`. All reads are
+ * async because the Supabase adapter fetches over the network (the mock adapter
+ * resolves immediately).
  */
 export interface OrdersRepository {
-  /* ── View reads (current UI: Orders list + detail) ── */
+  /* ── Canonical reads (async; UI maps to its view shape) ── */
 
-  /** All orders (view shape) across both open/closed queues. */
-  getOrders(): OrderView[];
-  /** Look up a single order by id; undefined when missing. */
-  getOrderById(id: string | undefined): OrderView | undefined;
-  /** Build the compact list meta line, e.g. "3 items · dine-in · 2 min ago". */
-  getOrderMeta(order: OrderView): string;
-
-  /* ── Canonical reads (backend/reporting facing) ── */
-
-  /** Canonical, backend-facing orders (numeric money, status, timestamps). */
-  getCanonicalOrders(): CanonicalOrder[];
-  /** Active queue only (submitted/preparing/ready), optionally store-scoped. */
-  getActiveOrders(storeId?: string): CanonicalOrder[];
-  /** Historical queue only (completed/cancelled), optionally store-scoped. */
-  getOrderHistory(storeId?: string): CanonicalOrder[];
+  /** Open queue only (`open` = saved/unpaid), optionally store-scoped. */
+  getActiveOrders(storeId?: string): Promise<CanonicalOrder[]>;
+  /** Closed queue only (`paid`/`cancelled`), optionally store-scoped. */
+  getOrderHistory(storeId?: string): Promise<CanonicalOrder[]>;
   /** Canonical order with items/modifiers; undefined when missing. */
-  getCanonicalOrderById(id: string | undefined): CanonicalOrder | undefined;
+  getCanonicalOrderById(
+    id: string | undefined
+  ): Promise<CanonicalOrder | undefined>;
 
   /* ── Guarded writes (the only ways to mutate an order) ── */
 
-  /** Create and persist a `submitted` order from a local cart snapshot. */
-  createOrder(input: OrderCreateInput): Promise<CanonicalOrder>;
   /**
-   * Move an order along an approved path only. Throws when the transition is
-   * invalid (e.g. completed → preparing) or the order is missing.
+   * Create and persist an order from a local cart snapshot. When
+   * `input.paid` is true the order is created `paid` (Closed); otherwise `open`.
    */
-  transitionOrder(id: string, to: OrderStatus): CanonicalOrder;
-  /** Cancel an eligible order with a required reason. */
-  cancelOrder(id: string, reason: string): CanonicalOrder;
+  createOrder(input: OrderCreateInput): Promise<CanonicalOrder>;
+  /** Mark an eligible `open` order as `paid` (moves it to the Closed queue). */
+  markOrderPaid(id: string): Promise<CanonicalOrder>;
+  /** Cancel an eligible `open` order with a required reason. */
+  cancelOrder(id: string, reason: string): Promise<CanonicalOrder>;
 }
 
 /** Reads for the Admin workspace (editable catalog + editor config). */

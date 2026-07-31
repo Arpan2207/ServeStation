@@ -5,16 +5,18 @@
  * model is defined deliberately and up front — before any Supabase query is
  * written — and it is what the `orders` / `order_items` schema mirrors.
  *
- * FIRST-RELEASE CONTRACT (reviewed & locked):
+ * FIRST-RELEASE CONTRACT (reviewed & locked — simplified in Phase 3, Step 7):
  *  - Carts stay device-local. A `draft` order is NEVER persisted; an order only
- *    exists once staff press "Place order", at which point it is `submitted`.
- *  - Staff drive a single, simple operational status machine:
- *        submitted → preparing → ready → completed
- *                              ↘ cancelled
- *  - There is ONE status per order (no parallel "lifecycle" + "kitchen" state
- *    machines) so the queue truth is unambiguous.
- *  - Payments and refunds are deferred to a later backend phase; there are no
- *    payment/refund fields on the first-release order (see docs/order-lifecycle).
+ *    exists once staff act on the cart ("Save" or "Charge").
+ *  - The operational status is deliberately minimal for now — the kitchen
+ *    workflow (`submitted → preparing → ready`) is intentionally NOT modelled
+ *    yet. An order is only ever:
+ *        open      → saved but not paid  (lives in the "Open orders" queue)
+ *        paid      → paid & closed       (lives in the "Closed orders" queue)
+ *        cancelled → voided & closed     (lives in the "Closed orders" queue)
+ *  - "Charge" creates an order directly as `paid`; "Save" creates it as `open`.
+ *    An `open` order can later be marked `paid` or `cancelled`.
+ *  - There is ONE status per order so the queue truth is unambiguous.
  *
  * Design rules:
  *  - all money is numeric ({@link Money}); never store formatted "$" strings
@@ -22,63 +24,48 @@
  *    journey without relying on UI phrases like "created 2 min ago"
  *  - line items snapshot name + price at order time so later catalog edits never
  *    rewrite historical orders
+ *  - `paid` here means "closed by payment"; a richer payments/refunds model
+ *    (dedicated tables) is still deferred (see docs/order-lifecycle.md).
  */
 
 import type { FulfilmentType } from "./fulfilment";
 import { roundMoney, type Money } from "./money";
 
 /**
- * The single operational status of an order for the first release.
+ * The single operational status of an order.
  *
- * `submitted` is the entry state (cart placed), `completed` and `cancelled` are
- * the two terminal states. There is intentionally no `draft` value because
- * carts are never persisted.
+ * `open` is the entry state for a saved (unpaid) order; `paid` and `cancelled`
+ * are the two terminal states. There is intentionally no `draft` value because
+ * carts are never persisted, and no kitchen states (`preparing`/`ready`) yet.
  */
-export type OrderStatus =
-  | "submitted"
-  | "preparing"
-  | "ready"
-  | "completed"
-  | "cancelled";
+export type OrderStatus = "open" | "paid" | "cancelled";
 
 /** Statuses that belong to the live/"Open" queue. */
-export const OPEN_ORDER_STATUSES: readonly OrderStatus[] = [
-  "submitted",
-  "preparing",
-  "ready",
-];
+export const OPEN_ORDER_STATUSES: readonly OrderStatus[] = ["open"];
 
 /** Terminal statuses that belong to the "Closed"/history queue. */
-export const CLOSED_ORDER_STATUSES: readonly OrderStatus[] = [
-  "completed",
-  "cancelled",
-];
+export const CLOSED_ORDER_STATUSES: readonly OrderStatus[] = ["paid", "cancelled"];
 
 /**
  * Allowed forward transitions for each status. Any move not listed here is
- * rejected. Terminal states (`completed`, `cancelled`) allow no transitions.
+ * rejected. Terminal states (`paid`, `cancelled`) allow no transitions.
  */
 export const ORDER_STATUS_TRANSITIONS: Record<OrderStatus, readonly OrderStatus[]> = {
-  submitted: ["preparing", "cancelled"],
-  preparing: ["ready", "cancelled"],
-  ready: ["completed", "cancelled"],
-  completed: [],
+  open: ["paid", "cancelled"],
+  paid: [],
   cancelled: [],
 };
 
 /**
  * Map a target status to the timestamp field that must be stamped when an order
- * reaches it. Used by both the domain transition helper and the SQL function so
- * code and database agree.
+ * reaches it. Only the terminal states carry a milestone timestamp (an `open`
+ * order is timed by its `createdAt`). Used by both the domain transition helper
+ * and the SQL function so code and database agree.
  */
-export const TIMESTAMP_FIELD_FOR_STATUS: Record<
-  OrderStatus,
-  keyof OrderTimestamps
+export const TIMESTAMP_FIELD_FOR_STATUS: Partial<
+  Record<OrderStatus, keyof OrderTimestamps>
 > = {
-  submitted: "submittedAt",
-  preparing: "preparingAt",
-  ready: "readyAt",
-  completed: "completedAt",
+  paid: "paidAt",
   cancelled: "cancelledAt",
 };
 
@@ -116,7 +103,7 @@ export interface OrderItem {
 /**
  * All monetary figures for an order, stored as raw numbers.
  *
- * Invariant for the payment-deferred first release:
+ * Invariant:
  *   `total === subtotal + tax - discount`
  * Refund fields are intentionally absent until the payments phase.
  */
@@ -135,10 +122,9 @@ export interface OrderMoney {
 export interface OrderTimestamps {
   createdAt: string;
   updatedAt: string;
-  submittedAt?: string;
-  preparingAt?: string;
-  readyAt?: string;
-  completedAt?: string;
+  /** Set when the order was paid (entered the `paid` terminal state). */
+  paidAt?: string;
+  /** Set when the order was cancelled (entered the `cancelled` state). */
   cancelledAt?: string;
 }
 
@@ -175,8 +161,8 @@ export interface Order {
 }
 
 /**
- * Input required to create a submitted order from a local cart snapshot. This
- * is the ONLY way an order enters the system; there is no persisted draft.
+ * Input required to create an order from a local cart snapshot. This is the
+ * ONLY way an order enters the system; there is no persisted draft.
  */
 export interface OrderItemInput {
   menuItemId?: string;
@@ -188,7 +174,7 @@ export interface OrderItemInput {
   note?: string;
 }
 
-/** The cart-derived payload used to create a submitted order. */
+/** The cart-derived payload used to create an order. */
 export interface OrderCreateInput {
   orderNumber: string;
   storeId?: string;
@@ -202,13 +188,19 @@ export interface OrderCreateInput {
   taxRate?: number;
   /** Optional order-level discount in dollars. Defaults to 0. */
   discount?: Money;
+  /**
+   * When true the order is created already `paid` (the "Charge" flow → Closed
+   * queue). When false/omitted it is created `open` (the "Save" flow → Open
+   * queue) and can be paid or cancelled later.
+   */
+  paid?: boolean;
 }
 
 /** Options controlling id/time generation, kept explicit for testability. */
 export interface OrderCreateOptions {
   /** Order id; generated when omitted. */
   id?: string;
-  /** ISO timestamp used for created/submitted; defaults to now. */
+  /** ISO timestamp used for created (and paid, when created paid); defaults to now. */
   now?: string;
   /** Per-line id factory; defaults to `${orderId}-line-${index}`. */
   makeItemId?: (index: number) => string;
@@ -227,7 +219,7 @@ export class OrderTransitionError extends Error {
 
 /** @returns true when `status` is a terminal (Closed queue) status. */
 export function isTerminalOrderStatus(status: OrderStatus): boolean {
-  return status === "completed" || status === "cancelled";
+  return status === "paid" || status === "cancelled";
 }
 
 /**
@@ -251,14 +243,10 @@ export function orderStatusTab(status: OrderStatus): "open" | "closed" {
  */
 export function orderStatusLabel(status: OrderStatus): string {
   switch (status) {
-    case "submitted":
-      return "New";
-    case "preparing":
-      return "Preparing";
-    case "ready":
-      return "Ready";
-    case "completed":
-      return "Completed";
+    case "open":
+      return "Open";
+    case "paid":
+      return "Paid";
     case "cancelled":
       return "Cancelled";
   }
@@ -310,14 +298,18 @@ function newId(): string {
 }
 
 /**
- * Create a `submitted` order from a local cart snapshot. This is the single
- * entry point for an order into the system.
+ * Create an order from a local cart snapshot. This is the single entry point
+ * for an order into the system.
  *
- * @param input Cart-derived order payload.
+ * The order enters as `paid` (closed) when `input.paid` is true — the "Charge"
+ * flow — otherwise as `open` — the "Save" flow. When created paid, the `paidAt`
+ * timestamp is stamped at creation time.
+ *
+ * @param input Cart-derived order payload (incl. the `paid` flag).
  * @param opts Id/time/line-id generation hooks (defaulted for convenience).
- * @returns A fully-formed submitted {@link Order} with money + snapshots.
+ * @returns A fully-formed {@link Order} with money + snapshots.
  */
-export function createSubmittedOrder(
+export function createOrder(
   input: OrderCreateInput,
   opts: OrderCreateOptions = {}
 ): Order {
@@ -339,20 +331,28 @@ export function createSubmittedOrder(
     note: line.note,
   }));
 
+  const status: OrderStatus = input.paid ? "paid" : "open";
+
   return {
     id,
     orderNumber: input.orderNumber,
     storeId: input.storeId,
     staffId: input.staffId,
     fulfilmentType: input.fulfilmentType,
-    status: "submitted",
+    status,
     customerName: input.customerName,
     destinationLabel: input.destinationLabel,
     money: computeOrderMoney(items, {
       taxRate: input.taxRate,
       discount: input.discount,
     }),
-    timestamps: { createdAt: now, updatedAt: now, submittedAt: now },
+    // An `open` order is timed by createdAt; a paid-on-creation order also
+    // stamps paidAt so the Closed queue can show when it was paid.
+    timestamps: {
+      createdAt: now,
+      updatedAt: now,
+      paidAt: status === "paid" ? now : undefined,
+    },
     items,
     note: input.note,
   };
@@ -377,8 +377,25 @@ export function transitionOrder(
     throw new OrderTransitionError(order.status, to);
   }
   const timestamps: OrderTimestamps = { ...order.timestamps, updatedAt: now };
-  timestamps[TIMESTAMP_FIELD_FOR_STATUS[to]] = now;
+  // Only terminal statuses carry a milestone timestamp (see the partial map).
+  const field = TIMESTAMP_FIELD_FOR_STATUS[to];
+  if (field) timestamps[field] = now;
   return { ...order, status: to, timestamps };
+}
+
+/**
+ * Mark an eligible (`open`) order as `paid`, moving it to the Closed queue and
+ * stamping `paidAt`. Throws {@link OrderTransitionError} from any other status.
+ *
+ * @param order The current order.
+ * @param now ISO timestamp for the payment (defaults to now).
+ * @returns A new paid order object.
+ */
+export function markOrderPaid(
+  order: Order,
+  now: string = new Date().toISOString()
+): Order {
+  return transitionOrder(order, "paid", now);
 }
 
 /**
