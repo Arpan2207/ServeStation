@@ -8,7 +8,14 @@
  */
 
 import React from "react";
-import { Pressable, ScrollView, Text, TextInput, View } from "react-native";
+import {
+  ActivityIndicator,
+  Pressable,
+  ScrollView,
+  Text,
+  TextInput,
+  View,
+} from "react-native";
 import { useRouter } from "expo-router";
 import { StyleSheet } from "react-native-unistyles";
 
@@ -86,13 +93,26 @@ export function OrdersListScreen() {
             </View>
           </View>
 
-          {/* List body */}
+          {/* List body — gated on the async load. Old data stays visible during
+              a focus refresh; only fall back to loading/error when empty. */}
           <ScrollView
             style={styles.list}
             contentContainerStyle={styles.listContent}
             showsVerticalScrollIndicator={false}
           >
-            {orders.filteredOrders.length === 0 ? (
+            {orders.loading && orders.filteredOrders.length === 0 ? (
+              <View style={styles.stateBlock}>
+                <ActivityIndicator size="large" />
+                <Text style={styles.emptyText}>Loading orders…</Text>
+              </View>
+            ) : orders.error && orders.filteredOrders.length === 0 ? (
+              <View style={styles.stateBlock}>
+                <Text style={styles.emptyText}>{orders.error}</Text>
+                <Pressable style={styles.retryButton} onPress={orders.reload}>
+                  <Text style={styles.retryLabel}>Retry</Text>
+                </Pressable>
+              </View>
+            ) : orders.filteredOrders.length === 0 ? (
               <View style={styles.emptyState}>
                 <Text style={styles.emptyText}>
                   No {orders.tab} orders match your search.
@@ -264,10 +284,31 @@ const styles = StyleSheet.create((theme) => ({
     paddingVertical: 48,
     alignItems: "center",
   },
+  stateBlock: {
+    paddingVertical: 48,
+    alignItems: "center",
+    gap: 14,
+  },
   emptyText: {
     fontFamily: theme.typography.fontFamily.label,
     fontSize: 16,
     lineHeight: 22,
     color: theme.colors.icon,
+    textAlign: "center",
+  },
+  retryButton: {
+    height: 42,
+    paddingHorizontal: 20,
+    borderRadius: 16,
+    backgroundColor: theme.colors.primary,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  retryLabel: {
+    fontFamily: theme.typography.fontFamily.label,
+    fontSize: 14,
+    lineHeight: 20,
+    color: theme.colors.textOnPrimary,
+    fontWeight: "600",
   },
 }));

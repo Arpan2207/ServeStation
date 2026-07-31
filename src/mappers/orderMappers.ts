@@ -5,11 +5,12 @@
  * The legacy view stores UI strings ("$43.60", "created 2 min ago") that must
  * never become the backend source of truth. `orderViewToCanonical` extracts raw
  * numeric money + a single canonical status from the mock view; the reverse
- * `canonicalOrderToView` re-derives all UI strings (labels, timing, currency)
- * from the canonical order so screens keep working while reading real data.
+ * `canonicalOrderToView` re-derives all UI strings (labels, timing, currency,
+ * paid/unpaid) from the canonical order so screens keep working while reading
+ * real data.
  *
- * Payments/refunds are deferred for the first release, so no payment state is
- * mapped in either direction.
+ * Status model (Phase 3, Step 7): an order is `open` (saved, unpaid) → Open
+ * queue, or `paid` / `cancelled` (closed) → Closed queue.
  */
 
 import type { Order as OrderView } from "@/types/orders";
@@ -25,11 +26,11 @@ import {
 
 /** Derive a canonical status from the legacy tab + status label. */
 function deriveStatus(view: OrderView): OrderStatus {
-  if (view.tab === "closed") return "completed";
+  if (view.tab === "open") return "open";
+  // Closed rows are `paid` unless the label explicitly says cancelled/voided.
   const label = view.statusLabel.toLowerCase();
-  if (label.includes("ready")) return "ready";
-  if (label.includes("prepar")) return "preparing";
-  return "submitted";
+  if (label.includes("cancel") || label.includes("void")) return "cancelled";
+  return "paid";
 }
 
 /**
@@ -58,7 +59,6 @@ export function orderViewToCanonical(
   }));
 
   const status = deriveStatus(view);
-  const closed = status === "completed" || status === "cancelled";
 
   return {
     id: view.id,
@@ -76,8 +76,7 @@ export function orderViewToCanonical(
     timestamps: {
       createdAt: now,
       updatedAt: now,
-      submittedAt: now,
-      completedAt: status === "completed" ? now : undefined,
+      paidAt: status === "paid" ? now : undefined,
       cancelledAt: status === "cancelled" ? now : undefined,
     },
     items,
@@ -98,13 +97,13 @@ function formatRelative(iso: string | undefined, now: number): string {
 
 /** Build the relative timing phrase shown on list rows / detail. */
 function deriveTiming(order: Order, now: number): string {
-  if (order.status === "completed") {
-    return `completed ${formatRelative(order.timestamps.completedAt, now)}`;
+  if (order.status === "paid") {
+    return `paid ${formatRelative(order.timestamps.paidAt ?? order.timestamps.createdAt, now)}`;
   }
   if (order.status === "cancelled") {
     return `cancelled ${formatRelative(order.timestamps.cancelledAt, now)}`;
   }
-  return `created ${formatRelative(order.timestamps.submittedAt ?? order.timestamps.createdAt, now)}`;
+  return `created ${formatRelative(order.timestamps.createdAt, now)}`;
 }
 
 /**
@@ -138,8 +137,14 @@ export function canonicalOrderToView(
       price: formatMoney(line.unitPrice),
     })),
     tax: formatMoney(order.money.tax),
-    // Payments are deferred for the first release; no payment string is shown.
-    payment: "—",
-    prepTime: formatRelative(order.timestamps.submittedAt, now),
+    // Coarse payment string derived from status: paid orders show when they were
+    // paid; open orders are still unpaid; cancelled orders show no payment.
+    payment:
+      order.status === "paid"
+        ? `Paid · ${formatRelative(order.timestamps.paidAt ?? order.timestamps.createdAt, now)}`
+        : order.status === "open"
+          ? "Unpaid · awaiting payment"
+          : "—",
+    prepTime: `Created ${formatRelative(order.timestamps.createdAt, now)}`,
   };
 }

@@ -14,7 +14,8 @@ import {
   cancelOrder,
   canTransitionOrder,
   computeOrderMoney,
-  createSubmittedOrder,
+  createOrder,
+  markOrderPaid,
   OrderTransitionError,
   orderStatusTab,
   transitionOrder,
@@ -60,11 +61,12 @@ const CREATE_OPTS = {
 } as const;
 
 describe("order lifecycle contract", () => {
-  it("1. turns a cart into a submitted order with item/modifier snapshots", () => {
-    const order = createSubmittedOrder(sampleInput(), CREATE_OPTS);
+  it("1. turns a cart into an open order (Save) with item/modifier snapshots", () => {
+    const order = createOrder(sampleInput(), CREATE_OPTS);
 
-    assert.equal(order.status, "submitted");
-    assert.equal(order.timestamps.submittedAt, CREATE_OPTS.now);
+    // "Save" creates an unpaid, open order — no paidAt is stamped yet.
+    assert.equal(order.status, "open");
+    assert.equal(order.timestamps.paidAt, undefined);
     assert.equal(order.timestamps.createdAt, CREATE_OPTS.now);
 
     // Line + modifier values are snapshotted onto the order.
@@ -75,6 +77,14 @@ describe("order lifecycle contract", () => {
     assert.equal(order.items[0].modifiers[0].label, "Extra cheese");
     assert.equal(order.items[0].modifiers[0].priceDelta, 1.5);
     assert.equal(order.items[0].menuItemId, "item-smash");
+  });
+
+  it("1b. 'Charge' creates a paid, closed order and stamps paidAt at creation", () => {
+    const order = createOrder(sampleInput({ paid: true }), CREATE_OPTS);
+
+    assert.equal(order.status, "paid");
+    assert.equal(order.timestamps.paidAt, CREATE_OPTS.now);
+    assert.equal(orderStatusTab(order.status), "closed");
   });
 
   it("2. keeps money self-consistent (total = subtotal + tax - discount, all >= 0)", () => {
@@ -101,60 +111,53 @@ describe("order lifecycle contract", () => {
     assert.equal(money.total, 31.48);
   });
 
-  it("3. allows submitted → preparing → ready → completed and stamps timestamps", () => {
-    const submitted = createSubmittedOrder(sampleInput(), CREATE_OPTS);
+  it("3. allows open → paid and stamps paidAt", () => {
+    const open = createOrder(sampleInput(), CREATE_OPTS);
+    assert.equal(open.status, "open");
 
-    const preparing = transitionOrder(submitted, "preparing", "2026-01-01T10:05:00.000Z");
-    assert.equal(preparing.status, "preparing");
-    assert.equal(preparing.timestamps.preparingAt, "2026-01-01T10:05:00.000Z");
-
-    const ready = transitionOrder(preparing, "ready", "2026-01-01T10:10:00.000Z");
-    assert.equal(ready.status, "ready");
-    assert.equal(ready.timestamps.readyAt, "2026-01-01T10:10:00.000Z");
-
-    const completed = transitionOrder(ready, "completed", "2026-01-01T10:15:00.000Z");
-    assert.equal(completed.status, "completed");
-    assert.equal(completed.timestamps.completedAt, "2026-01-01T10:15:00.000Z");
-
-    // Earlier milestones remain intact through the chain.
-    assert.equal(completed.timestamps.preparingAt, "2026-01-01T10:05:00.000Z");
-    assert.equal(completed.timestamps.readyAt, "2026-01-01T10:10:00.000Z");
+    const paid = markOrderPaid(open, "2026-01-01T10:15:00.000Z");
+    assert.equal(paid.status, "paid");
+    assert.equal(paid.timestamps.paidAt, "2026-01-01T10:15:00.000Z");
+    // createdAt is preserved through the transition.
+    assert.equal(paid.timestamps.createdAt, CREATE_OPTS.now);
   });
 
   it("4. rejects invalid transitions", () => {
-    const submitted = createSubmittedOrder(sampleInput(), CREATE_OPTS);
-    const ready = transitionOrder(
-      transitionOrder(submitted, "preparing"),
-      "ready"
-    );
-    const completed = transitionOrder(ready, "completed");
-    const cancelled = cancelOrder(submitted, "changed mind");
+    const open = createOrder(sampleInput(), CREATE_OPTS);
+    const paid = markOrderPaid(open);
+    const cancelled = cancelOrder(open, "changed mind");
 
-    assert.throws(() => transitionOrder(completed, "preparing"), OrderTransitionError);
-    assert.throws(() => transitionOrder(cancelled, "ready"), OrderTransitionError);
-    assert.throws(() => transitionOrder(submitted, "completed"), OrderTransitionError);
-    assert.throws(() => transitionOrder(ready, "submitted"), OrderTransitionError);
+    // Terminal states cannot move anywhere.
+    assert.throws(() => transitionOrder(paid, "cancelled"), OrderTransitionError);
+    assert.throws(() => transitionOrder(paid, "open"), OrderTransitionError);
+    assert.throws(() => transitionOrder(cancelled, "paid"), OrderTransitionError);
+    // An order cannot transition to its own current status.
+    assert.throws(() => transitionOrder(open, "open"), OrderTransitionError);
 
     // And the guard predicate agrees with the throwing helper.
-    assert.equal(canTransitionOrder("completed", "preparing"), false);
-    assert.equal(canTransitionOrder("submitted", "preparing"), true);
+    assert.equal(canTransitionOrder("paid", "cancelled"), false);
+    assert.equal(canTransitionOrder("open", "paid"), true);
+    assert.equal(canTransitionOrder("open", "cancelled"), true);
   });
 
   it("5. cancels an eligible order and records the reason; terminal orders cannot be cancelled", () => {
-    const submitted = createSubmittedOrder(sampleInput(), CREATE_OPTS);
+    const open = createOrder(sampleInput(), CREATE_OPTS);
 
-    const cancelled = cancelOrder(submitted, "out of stock", "2026-01-01T10:03:00.000Z");
+    const cancelled = cancelOrder(open, "out of stock", "2026-01-01T10:03:00.000Z");
     assert.equal(cancelled.status, "cancelled");
     assert.equal(cancelled.timestamps.cancelledAt, "2026-01-01T10:03:00.000Z");
     assert.equal(cancelled.cancellationReason, "out of stock");
 
+    // A paid order is terminal and cannot be cancelled either.
+    const paid = markOrderPaid(createOrder(sampleInput(), CREATE_OPTS));
+    assert.throws(() => cancelOrder(paid, "too late"), OrderTransitionError);
     assert.throws(() => cancelOrder(cancelled, "again"), OrderTransitionError);
   });
 
   it("6. keeps historical prices unchanged after a later catalog price edit", () => {
     // Simulate a mutable catalog item the cart is built from.
     const catalogItem = { id: "item-smash", name: "Smash Burger", price: 12 };
-    const order = createSubmittedOrder(
+    const order = createOrder(
       sampleInput({
         items: [
           {
@@ -172,14 +175,14 @@ describe("order lifecycle contract", () => {
     // Later, the catalog price changes.
     catalogItem.price = 99;
 
-    // The submitted order's snapshot is unaffected.
+    // The placed order's snapshot is unaffected.
     assert.equal(order.items[0].unitPrice, 12);
     assert.equal(order.money.subtotal, 12);
   });
 
   it("7. derives Open/Closed queues from status", () => {
-    const open: OrderStatus[] = ["submitted", "preparing", "ready"];
-    const closed: OrderStatus[] = ["completed", "cancelled"];
+    const open: OrderStatus[] = ["open"];
+    const closed: OrderStatus[] = ["paid", "cancelled"];
 
     for (const status of open) assert.equal(orderStatusTab(status), "open");
     for (const status of closed) assert.equal(orderStatusTab(status), "closed");

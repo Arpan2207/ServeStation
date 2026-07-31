@@ -9,7 +9,6 @@ import React from "react";
 import { Pressable, Text, View } from "react-native";
 import { StyleSheet } from "react-native-unistyles";
 
-import { ordersRepository } from "@/repositories";
 import type { Order } from "@/types/orders";
 
 interface OrderRowProps {
@@ -17,6 +16,12 @@ interface OrderRowProps {
   /** Whether this row is the currently selected one (subtle highlight). */
   selected?: boolean;
   onPress?: () => void;
+}
+
+/** Compose the compact meta line, e.g. "3 items · dine-in · created 2 min ago". */
+function orderMetaLine(order: Order): string {
+  const itemWord = order.items === 1 ? "item" : "items";
+  return `${order.items} ${itemWord} · ${order.orderType} · ${order.timing}`;
 }
 
 /**
@@ -53,7 +58,7 @@ export function OrderRow({ order, selected, onPress }: OrderRowProps) {
           <Text style={styles.orderTitle}>
             #{order.orderNumber} · {order.customer}
           </Text>
-          <Text style={styles.meta}>{ordersRepository.getOrderMeta(order)}</Text>
+          <Text style={styles.meta}>{orderMetaLine(order)}</Text>
         </View>
 
         <Text style={styles.total}>{order.total}</Text>

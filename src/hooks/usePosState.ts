@@ -151,11 +151,18 @@ export interface UsePosState {
   cartSummary: string;
 
   /* order submission (persists to the repository / Supabase) */
-  placeOrder: () => void;
-  placingOrder: boolean;
+  /** Save the cart as an unpaid, `open` order (Open queue). */
+  saveOrder: () => void;
+  /** Charge the cart now, creating a `paid`, closed order (Closed queue). */
+  chargeOrder: () => void;
+  /** Which submit action is in flight, else null. */
+  placingAction: PlacingAction;
   placeError: string | null;
   lastPlacedSummary: string | null;
 }
+
+/** Which order-submit action is currently running. */
+export type PlacingAction = "save" | "charge" | null;
 
 /* ── Hook ────────────────────────────────────────────── */
 
@@ -192,7 +199,7 @@ export function usePosState(): UsePosState {
   const [lastPlacedSummary, setLastPlacedSummary] = useState<string | null>(
     null
   );
-  const [placingOrder, setPlacingOrder] = useState<boolean>(false);
+  const [placingAction, setPlacingAction] = useState<PlacingAction>(null);
   const [placeError, setPlaceError] = useState<string | null>(null);
 
   const [cart, dispatch] = useReducer(cartReducer, []);
@@ -294,44 +301,60 @@ export function usePosState(): UsePosState {
     return `${cartCount} ${itemWord} · ${orderType.toLowerCase()}`;
   }, [cartCount, orderType]);
 
-  /* Place the order: build the canonical create-input from the cart and persist
-     it through the repository (Supabase when configured). On success, clear the
-     cart and surface a confirmation; on failure, surface the error. */
-  const placeOrder = useCallback(async () => {
-    if (cart.length === 0 || placingOrder) return;
-    setPlacingOrder(true);
-    setPlaceError(null);
-    try {
-      const input: OrderCreateInput = {
-        orderNumber: generateOrderNumber(),
-        fulfilmentType: fromPosOrderType(orderType),
-        taxRate,
-        items: cart.map((line) => ({
-          menuItemId: line.itemId,
-          nameSnapshot: line.name,
-          unitPrice: line.basePrice,
-          quantity: line.qty,
-          note: line.instruction,
-          modifiers: line.modifiers.map((modifier) => ({
-            modifierOptionId: modifier.id,
-            label: modifier.label,
-            priceDelta: modifier.priceDelta,
+  /* Submit the cart: build the canonical create-input and persist it through the
+     repository (Supabase when configured). `paid` decides the flow — Save (open,
+     unpaid) vs Charge (paid, closed). On success, clear the cart and surface a
+     confirmation; on failure, surface the error. */
+  const placeOrder = useCallback(
+    async (paid: boolean) => {
+      if (cart.length === 0 || placingAction) return;
+      setPlacingAction(paid ? "charge" : "save");
+      setPlaceError(null);
+      try {
+        const input: OrderCreateInput = {
+          orderNumber: generateOrderNumber(),
+          fulfilmentType: fromPosOrderType(orderType),
+          taxRate,
+          paid,
+          items: cart.map((line) => ({
+            menuItemId: line.itemId,
+            nameSnapshot: line.name,
+            unitPrice: line.basePrice,
+            quantity: line.qty,
+            note: line.instruction,
+            modifiers: line.modifiers.map((modifier) => ({
+              modifierOptionId: modifier.id,
+              label: modifier.label,
+              priceDelta: modifier.priceDelta,
+            })),
           })),
-        })),
-      };
-      const created = await ordersRepository.createOrder(input);
-      setLastPlacedSummary(
-        `Order ${created.orderNumber} placed · ${formatCurrency(created.money.total)}`
-      );
-      dispatch({ type: "CLEAR" });
-    } catch (err) {
-      setPlaceError(
-        err instanceof Error ? err.message : "Failed to place the order."
-      );
-    } finally {
-      setPlacingOrder(false);
-    }
-  }, [cart, placingOrder, orderType, taxRate]);
+        };
+        const created = await ordersRepository.createOrder(input);
+        const verb = paid ? "charged" : "saved";
+        setLastPlacedSummary(
+          `Order ${created.orderNumber} ${verb} · ${formatCurrency(created.money.total)}`
+        );
+        dispatch({ type: "CLEAR" });
+      } catch (err) {
+        setPlaceError(
+          err instanceof Error ? err.message : "Failed to submit the order."
+        );
+      } finally {
+        setPlacingAction(null);
+      }
+    },
+    [cart, placingAction, orderType, taxRate]
+  );
+
+  /* Save the cart as an unpaid, open order. */
+  const saveOrder = useCallback(() => {
+    void placeOrder(false);
+  }, [placeOrder]);
+
+  /* Charge the cart now, creating a paid, closed order. */
+  const chargeOrder = useCallback(() => {
+    void placeOrder(true);
+  }, [placeOrder]);
 
   return {
     categories,
@@ -363,8 +386,9 @@ export function usePosState(): UsePosState {
     totals,
     cartSummary,
 
-    placeOrder,
-    placingOrder,
+    saveOrder,
+    chargeOrder,
+    placingAction,
     placeError,
     lastPlacedSummary,
   };

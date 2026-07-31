@@ -3,26 +3,27 @@
  * Two-column layout: main column (order summary) and
  * a right support column (payment + notes & support + actions).
  *
- * The displayed order is resolved from the `id` route param via the shared
- * mock data, falling back to the first order when no/unknown id is provided.
+ * The displayed order is resolved from the `id` route param through the
+ * repository boundary (Supabase or mock) via `useOrderDetail`, which also
+ * exposes the two status actions available on an `open` order: mark it paid or
+ * cancel it. Both move the order into the Closed queue.
  */
 
 import React, { useState } from "react";
-import { Pressable, ScrollView, Text, View } from "react-native";
+import { ActivityIndicator, Pressable, ScrollView, Text, View } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { StyleSheet } from "react-native-unistyles";
 
 import { Screen } from "@/components/ui/Screen";
-import { ordersRepository } from "@/repositories";
+import { useOrderDetail } from "@/hooks/useOrderDetail";
 import type { OrderType } from "@/types/orders";
 
 const SUPPORT_CHIPS = ["Allergy note", "VIP guest", "Call before handoff"] as const;
 
-/** Actions available on the order, each with the feedback it surfaces. */
-const ACTIONS = [
-  { label: "Print ticket", feedback: "Ticket sent to printer.", primary: true },
-  { label: "Print receipt", feedback: "Receipt printed.", primary: false },
-  { label: "Issue refund", feedback: "Refund issued (simulated).", primary: false },
+/** Cosmetic print actions (no backend behavior in this phase). */
+const PRINT_ACTIONS = [
+  { label: "Print ticket", feedback: "Ticket sent to printer." },
+  { label: "Print receipt", feedback: "Receipt printed." },
 ] as const;
 
 /** Map an order type to its capitalized display label. */
@@ -35,9 +36,9 @@ const ORDER_TYPE_LABEL: Record<OrderType, string> = {
 /* ── Component ───────────────────────────────────────── */
 
 export function OrderDetailScreen() {
-  // Resolve the order from the route param, falling back to the first order.
+  // Resolve the order from the route param through the repository boundary.
   const { id } = useLocalSearchParams<{ id?: string }>();
-  const order = ordersRepository.getOrderById(id) ?? ordersRepository.getOrders()[0];
+  const detail = useOrderDetail(id);
   const router = useRouter();
 
   // Local, frontend-only interaction state.
@@ -50,6 +51,39 @@ export function OrderDetailScreen() {
   function toggleChip(chip: string) {
     setSelectedChips((prev) =>
       prev.includes(chip) ? prev.filter((c) => c !== chip) : [...prev, chip]
+    );
+  }
+
+  const order = detail.order;
+  const isOpen = detail.canonical?.status === "open";
+
+  // Gate the whole screen on the async load / missing order.
+  if (!order) {
+    return (
+      <Screen>
+        <View style={styles.screen}>
+          <View style={styles.frame}>
+            <View style={styles.header}>
+              <Pressable style={styles.backButton} onPress={() => router.back()}>
+                <Text style={styles.backLabel}>‹ Back</Text>
+              </Pressable>
+              <Text style={styles.title}>Order detail</Text>
+            </View>
+            <View style={styles.centerFill}>
+              {detail.loading ? (
+                <>
+                  <ActivityIndicator size="large" />
+                  <Text style={styles.centerText}>Loading order…</Text>
+                </>
+              ) : (
+                <Text style={styles.centerText}>
+                  {detail.error ?? "This order could not be found."}
+                </Text>
+              )}
+            </View>
+          </View>
+        </View>
+      </Screen>
     );
   }
 
@@ -152,30 +186,69 @@ export function OrderDetailScreen() {
                 </View>
               </View>
 
-              {/* Actions card (moved here from main column) */}
+              {/* Actions card — real status actions plus cosmetic print buttons */}
               <View style={styles.actionsCard}>
                 <Text style={styles.cardTitle}>Actions</Text>
+
+                {/* Status actions are only available on an open order. */}
+                {isOpen ? (
+                  <View style={styles.actionRow}>
+                    <Pressable
+                      style={[
+                        styles.actionPrimary,
+                        detail.pendingAction !== null && styles.actionDisabled,
+                      ]}
+                      disabled={detail.pendingAction !== null}
+                      onPress={detail.markPaid}
+                    >
+                      <Text style={styles.actionPrimaryLabel}>
+                        {detail.pendingAction === "paid"
+                          ? "Marking paid…"
+                          : "Mark as paid"}
+                      </Text>
+                    </Pressable>
+                    <Pressable
+                      style={[
+                        styles.actionDanger,
+                        detail.pendingAction !== null && styles.actionDisabled,
+                      ]}
+                      disabled={detail.pendingAction !== null}
+                      onPress={() => detail.cancel()}
+                    >
+                      <Text style={styles.actionDangerLabel}>
+                        {detail.pendingAction === "cancel"
+                          ? "Cancelling…"
+                          : "Cancel order"}
+                      </Text>
+                    </Pressable>
+                  </View>
+                ) : (
+                  <Text style={styles.actionFeedback}>
+                    This order is closed ({order.statusLabel.toLowerCase()}).
+                  </Text>
+                )}
+
+                {/* Error from the last status action, if any. */}
+                {detail.actionError && (
+                  <Text style={styles.actionError}>{detail.actionError}</Text>
+                )}
+
+                {/* Cosmetic print actions (no backend behavior in this phase). */}
                 <View style={styles.actionRow}>
-                  {ACTIONS.map((action) => (
+                  {PRINT_ACTIONS.map((action) => (
                     <Pressable
                       key={action.label}
-                      style={action.primary ? styles.actionPrimary : styles.actionSecondary}
+                      style={styles.actionSecondary}
                       onPress={() => setActionFeedback(action.feedback)}
                     >
-                      <Text
-                        style={
-                          action.primary
-                            ? styles.actionPrimaryLabel
-                            : styles.actionSecondaryLabel
-                        }
-                      >
+                      <Text style={styles.actionSecondaryLabel}>
                         {action.label}
                       </Text>
                     </Pressable>
                   ))}
                 </View>
 
-                {/* Local feedback for the last action performed */}
+                {/* Local feedback for the last cosmetic action performed */}
                 {actionFeedback && (
                   <Text style={styles.actionFeedback}>{actionFeedback}</Text>
                 )}
@@ -395,12 +468,53 @@ const styles = StyleSheet.create((theme) => ({
     color: theme.colors.textPrimary,
     fontWeight: "600",
   },
+  actionDanger: {
+    height: 42,
+    borderRadius: 16,
+    backgroundColor: theme.colors.surfaceWarm,
+    borderWidth: 1,
+    borderColor: theme.colors.danger,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 18,
+  },
+  actionDangerLabel: {
+    fontFamily: theme.typography.fontFamily.label,
+    fontSize: 14,
+    lineHeight: 20,
+    color: theme.colors.danger,
+    fontWeight: "700",
+  },
+  actionDisabled: {
+    opacity: 0.5,
+  },
   actionFeedback: {
     fontFamily: theme.typography.fontFamily.label,
     fontSize: 13,
     lineHeight: 18,
     color: theme.colors.textAccent,
     fontWeight: "600",
+  },
+  actionError: {
+    fontFamily: theme.typography.fontFamily.label,
+    fontSize: 13,
+    lineHeight: 18,
+    color: theme.colors.danger,
+    fontWeight: "600",
+  },
+  centerFill: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 14,
+    padding: 24,
+  },
+  centerText: {
+    fontFamily: theme.typography.fontFamily.label,
+    fontSize: 16,
+    lineHeight: 22,
+    color: theme.colors.icon,
+    textAlign: "center",
   },
 
   /* Side column */

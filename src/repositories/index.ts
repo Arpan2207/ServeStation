@@ -33,9 +33,9 @@ export const menuRepository: MenuRepository = supabaseConfigured
   : createMockMenuRepository();
 
 /**
- * Active orders repository. Uses Supabase when configured (Step 6: order
- * creation persists to Supabase; list/detail reads are still mock until Step 7),
- * otherwise the fully mock-backed adapter.
+ * Active orders repository. Uses Supabase when configured (Step 7: order
+ * creation, Open/Closed queue reads, and mark-paid / cancel all persist to
+ * Supabase), otherwise the fully mock-backed adapter.
  */
 export const ordersRepository: OrdersRepository = supabaseConfigured
   ? createSupabaseOrdersRepository()

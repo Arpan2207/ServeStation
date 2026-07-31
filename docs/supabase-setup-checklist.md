@@ -1,27 +1,28 @@
 # Supabase Setup Checklist
 
-This is the simple, practical sequence for moving Tablecraft from mock data to
+This is the simple, practical sequence for moving ServeStation from mock data to
 Supabase. Complete each step in order. The existing
 [Phase 3 rollout guide](./phase-3-supabase-rollout.md) explains the
 architecture behind these steps in more detail.
 
 ## Current position
 
-The order model, SQL migration file, repository interfaces, and order lifecycle
-tests are ready. The app still runs entirely from mock repositories.
+Steps 1–6 are done and verified (catalog + order creation persist to Supabase).
+Step 7 code (Orders list/detail reads + the simplified `open`/`paid`/`cancelled`
+model) is in place and needs its migration run.
 
-**Next step: create the Supabase project.**
+**Next step: run `0003_order_open_paid.sql` (see Step 7).**
 
 ---
 
-## 1. Review the order model — complete
+## 1. Review the order model — complete (simplified in Step 7)
 
-- The order lifecycle is locked as:
-  `submitted → preparing → ready → completed`, with `cancelled` available from
-  each active status.
-- Carts remain local; a database order is created only after staff press
-  **Place order**.
-- Payments and refunds are intentionally deferred.
+- The order status is now the minimal, payment-driven model:
+  `open` (saved/unpaid) → Open queue; `paid` and `cancelled` → Closed queue.
+- Carts remain local; a database order is created only when staff **Save** or
+  **Charge** the cart.
+- The kitchen workflow (`preparing`/`ready`) and a richer payments/refunds model
+  are intentionally deferred.
 - Reference: [Order lifecycle contract](./order-lifecycle.md).
 
 ## 2. Create a Supabase project — you do this
@@ -105,13 +106,42 @@ Implemented in code:
 Note: the placed order persists to Supabase, but the **Orders list still shows
 mock data** until Step 7 connects those reads.
 
-## 7. Connect Orders list and detail — we implement this
+## 7. Connect Orders list and detail — code complete, migration pending
 
-1. Build a Supabase-backed `OrdersRepository`.
-2. Read active orders (`submitted`, `preparing`, `ready`) and closed history
-   (`completed`, `cancelled`) from Supabase.
-3. Derive UI labels, timing text, and currency formatting in mappers/UI.
-4. Route status changes through `apply_order_status_transition`.
+The order status model was **simplified** in this step (see
+[Order lifecycle contract](./order-lifecycle.md)). The kitchen workflow
+(`submitted → preparing → ready`) is dropped for now in favour of:
+
+- **Save** in the POS cart → an `open` (unpaid) order in the **Open** queue.
+- **Charge** in the POS cart → a `paid` (closed) order in the **Closed** queue.
+- On the Order detail screen, an open order can be **Marked as paid** or
+  **Cancelled** (both move it to the Closed queue).
+
+Implemented in code:
+
+- The Supabase `OrdersRepository` now reads both queues (Open = `open`,
+  Closed = `paid`/`cancelled`) and a single order with its items + modifiers,
+  and routes `markOrderPaid` / `cancelOrder` through the guarded
+  `apply_order_status_transition` RPC.
+- Orders list/detail reads are now async (loading / error / empty states); the
+  list re-fetches on focus so newly placed orders appear.
+- UI labels, timing text, and currency formatting are derived in the mappers/UI.
+
+**You still need to run the new migration (once):**
+
+1. Open the Supabase **SQL Editor**.
+2. Run the entire contents of
+   [`supabase/migrations/0003_order_open_paid.sql`](../supabase/migrations/0003_order_open_paid.sql).
+   It rewrites the `order_status` enum to `('open', 'paid', 'cancelled')`,
+   remaps any existing rows (`completed → paid`), reworks the timestamp columns,
+   and replaces the `create_order` / `apply_order_status_transition` functions.
+3. Restart Expo (`npm run dev:clear`).
+4. In the POS cart, use **Save** and **Charge** and confirm the orders appear in
+   the **Open** and **Closed** tabs respectively; open an Open order and try
+   **Mark as paid** / **Cancel order**.
+
+Note: because the enum values change, `0003` must be run after `0001`/`0002`.
+Any orders placed earlier as `submitted` become `open` after the migration.
 
 ## 8. Add authentication and RLS — we implement together
 
@@ -135,16 +165,16 @@ This must be in place before live Admin editing.
 
 ## What to do now
 
-Step 5 is verified (catalog loads from Supabase). The Step 6 code is in place.
-To finish Step 6:
+Steps 5 and 6 are verified. The Step 7 code is in place. To finish Step 7:
 
-1. Run [`supabase/migrations/0002_create_order.sql`](../supabase/migrations/0002_create_order.sql)
-   in the Supabase SQL Editor.
+1. Run [`supabase/migrations/0003_order_open_paid.sql`](../supabase/migrations/0003_order_open_paid.sql)
+   in the Supabase SQL Editor (after `0001` and `0002`).
 2. Restart Expo with `npm run dev:clear`.
-3. Add items to the cart and press **Place order**.
-4. Confirm a new `orders` row (status `submitted`) with its `order_items` and
-   `order_item_modifiers` appears in Supabase.
+3. In the POS cart, try **Save** (creates an Open order) and **Charge** (creates
+   a Closed/paid order).
+4. Open the **Orders** screen and confirm the orders show under the **Open** and
+   **Closed** tabs; open an Open order and try **Mark as paid** / **Cancel order**.
 
-If placing fails, the cart shows the error message; share it and we can debug.
+If anything fails, the UI shows the error message; share it and we can debug.
 
 Do **not** share the database password or `service_role` key.

@@ -174,8 +174,9 @@ export function HomePosScreen() {
           onIncrement={pos.incrementLine}
           onDecrement={pos.decrementLine}
           totals={pos.totals}
-          onPlaceOrder={pos.placeOrder}
-          placingOrder={pos.placingOrder}
+          onSaveOrder={pos.saveOrder}
+          onChargeOrder={pos.chargeOrder}
+          placingAction={pos.placingAction}
           placeError={pos.placeError}
           lastPlacedSummary={pos.lastPlacedSummary}
         />
