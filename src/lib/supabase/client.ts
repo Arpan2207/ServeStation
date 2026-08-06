@@ -1,23 +1,26 @@
 /**
- * Lazily-constructed Supabase client for ServeStation's repository adapters.
+ * Lazily constructed Supabase client for repository adapters and authentication.
  *
- * Only the public project URL and publishable/anon key are read here. Screen
- * components must never import this module directly; the Supabase repository
- * adapters are the only layer allowed to use it.
- *
- * The client is created on first use (not at import time) so that importing this
- * module is always safe — even when Supabase is not configured and the app is
- * running on the mock adapters. Authentication persistence is configured later
- * with Step 8 (Auth + RLS).
+ * Only the public project URL and anon/publishable key are used. Native sessions
+ * persist in AsyncStorage, while token refresh follows the app lifecycle.
  */
 
-import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import "react-native-url-polyfill/auto";
+
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import {
+  createClient,
+  processLock,
+  type SupabaseClient,
+} from "@supabase/supabase-js";
+import { AppState, Platform, type NativeEventSubscription } from "react-native";
 
 let client: SupabaseClient | null = null;
+let appStateSubscription: NativeEventSubscription | null = null;
 
 /**
  * Get the shared Supabase client, creating it on first call.
- * @throws If the public Supabase env values are missing.
+ * @throws If the public Supabase environment values are missing.
  * @returns The memoized Supabase client.
  */
 export function getSupabaseClient(): SupabaseClient {
@@ -35,11 +38,25 @@ export function getSupabaseClient(): SupabaseClient {
 
   client = createClient(supabaseUrl, supabaseAnonKey, {
     auth: {
-      // Auth/RLS are added in Step 8; React Native storage is configured then.
-      persistSession: false,
-      autoRefreshToken: false,
+      ...(Platform.OS !== "web" ? { storage: AsyncStorage } : {}),
+      persistSession: true,
+      autoRefreshToken: true,
       detectSessionInUrl: false,
+      lock: processLock,
     },
   });
+
+  // Register once for the singleton. Pausing refresh in the background avoids
+  // unnecessary work when a tablet sleeps or another app is active.
+  if (Platform.OS !== "web" && !appStateSubscription) {
+    appStateSubscription = AppState.addEventListener("change", (state) => {
+      if (state === "active") {
+        client?.auth.startAutoRefresh();
+      } else {
+        client?.auth.stopAutoRefresh();
+      }
+    });
+  }
+
   return client;
 }

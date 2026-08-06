@@ -133,6 +133,7 @@ export function canonicalOrderToView(
     timing: deriveTiming(order, now),
     total: formatMoney(order.money.total),
     lineItems: order.items.map((line) => ({
+      id: line.id,
       label: line.nameSnapshot,
       price: formatMoney(line.unitPrice),
     })),

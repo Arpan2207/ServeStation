@@ -19,7 +19,24 @@ import type {
   AdminMenuItem,
   AdminModifierGroup,
 } from "@/types/admin";
+import type { AuthSession, StaffProfile } from "@/types/auth";
 import type { MenuCategory, MenuItem } from "@/types/pos";
+
+/** Authentication and current-staff operations used by the app shell. */
+export interface AuthRepository {
+  /** Whether this adapter requires a real staff sign-in. */
+  requiresSignIn: boolean;
+  /** Read the locally persisted session, if one exists. */
+  getSession(): Promise<AuthSession | null>;
+  /** Subscribe to sign-in, token refresh, and sign-out session changes. */
+  onAuthStateChange(listener: (session: AuthSession | null) => void): () => void;
+  /** Authenticate a staff member with email and password. */
+  signIn(email: string, password: string): Promise<AuthSession>;
+  /** Clear the current persisted session. */
+  signOut(): Promise<void>;
+  /** Load the active store-scoped profile for a signed-in user. */
+  getStaffProfile(userId: string): Promise<StaffProfile | null>;
+}
 
 /**
  * Reads for the POS catalog (categories, items, pricing config).

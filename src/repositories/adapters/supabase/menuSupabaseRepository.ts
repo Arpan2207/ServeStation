@@ -90,12 +90,24 @@ function unwrap<T>(result: { data: T | null; error: { message: string } | null }
 /** Build the Supabase-backed menu repository. */
 export function createSupabaseMenuRepository(): MenuRepository {
   let cache: Promise<RawCatalog> | null = null;
+  let cacheUserId: string | null = null;
 
   /** Fetch (and memoize) all catalog tables needed to build view/canonical shapes. */
-  function loadRaw(): Promise<RawCatalog> {
+  async function loadRaw(): Promise<RawCatalog> {
+    const supabase = getSupabaseClient();
+    const { data: authData, error: authError } = await supabase.auth.getUser();
+    if (authError) throw new Error(`Failed to resolve staff session: ${authError.message}`);
+    const userId = authData.user?.id ?? null;
+
+    // Prevent a store catalog from surviving across sign-out/sign-in on a
+    // shared tablet. RLS still enforces access; this also keeps the UI current.
+    if (cacheUserId !== userId) {
+      cache = null;
+      cacheUserId = userId;
+    }
+
     if (!cache) {
       cache = (async () => {
-        const supabase = getSupabaseClient();
         const [categories, items, groups, options, links] = await Promise.all([
           supabase
             .from("menu_categories")

@@ -16,6 +16,8 @@ export type OrderType = "dine-in" | "pickup" | "delivery";
 
 /** A single line item shown on the order detail screen. */
 export interface OrderLineItem {
+  /** Stable order-line id when the item comes from the canonical order model. */
+  id?: string;
   label: string;
   price: string;
 }

@@ -121,8 +121,8 @@ export function OrderDetailScreen() {
                 </View>
 
                 {/* Food line items */}
-                {order.lineItems.map((item) => (
-                  <View key={item.label} style={styles.lineRow}>
+                {order.lineItems.map((item, index) => (
+                  <View key={item.id ?? `${order.id}-line-${index}`} style={styles.lineRow}>
                     <Text style={styles.lineLabel}>{item.label}</Text>
                     <Text style={styles.linePrice}>{item.price}</Text>
                   </View>

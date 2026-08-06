@@ -17,6 +17,7 @@ interface ButtonProps {
   variant?: ButtonVariant;
   style?: ViewStyle;
   onPress?: () => void;
+  disabled?: boolean;
 }
 
 export function Button({
@@ -24,6 +25,7 @@ export function Button({
   variant = "primary",
   style,
   onPress,
+  disabled = false,
 }: ButtonProps) {
   return (
     <Pressable
@@ -34,8 +36,10 @@ export function Button({
         variant === "ghost" && styles.ghost,
         variant === "outline" && styles.outline,
         style,
+        disabled && styles.disabled,
       ]}
       onPress={onPress}
+      disabled={disabled}
     >
       <Text
         style={[
@@ -85,5 +89,8 @@ const styles = StyleSheet.create((theme) => ({
   },
   outlineLabel: {
     color: theme.colors.textSecondary,
+  },
+  disabled: {
+    opacity: 0.55,
   },
 }));

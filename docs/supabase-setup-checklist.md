@@ -7,11 +7,10 @@ architecture behind these steps in more detail.
 
 ## Current position
 
-Steps 1–6 are done and verified (catalog + order creation persist to Supabase).
-Step 7 code (Orders list/detail reads + the simplified `open`/`paid`/`cancelled`
-model) is in place and needs its migration run.
+Steps 1–7 are complete. Step 8 code is implemented; the Auth/RLS migration and
+first staff account must now be configured in Supabase.
 
-**Next step: run `0003_order_open_paid.sql` (see Step 7).**
+**Next step: run `0004_auth_and_rls.sql` and create the first staff profile.**
 
 ---
 
@@ -59,7 +58,7 @@ Future order-status changes must use that function instead of direct updates.
 
 Never use or place the Supabase `service_role` key in the React Native app.
 
-## 5. Connect catalog reads — code complete, seed pending
+## 5. Connect catalog reads — complete
 
 Implemented in code:
 
@@ -69,7 +68,7 @@ Implemented in code:
   via the new `src/hooks/useCatalog.ts`, and the POS screen shows
   loading / error (with retry) / empty states.
 
-**You still need to seed the database (once):**
+**Completed setup:**
 
 1. Open the Supabase **SQL Editor**.
 2. Run the entire contents of
@@ -81,7 +80,7 @@ Implemented in code:
 
 The cart remains device-local at this stage.
 
-## 6. Connect order creation — code complete, migration pending
+## 6. Connect order creation — complete
 
 Implemented in code:
 
@@ -94,7 +93,7 @@ Implemented in code:
 - POS **Place order** builds `OrderCreateInput` from the cart, persists it, then
   clears the cart. The cart shows placing / success / error states.
 
-**You still need to run the new migration (once):**
+**Completed setup:**
 
 1. Open the Supabase **SQL Editor**.
 2. Run the entire contents of
@@ -106,7 +105,7 @@ Implemented in code:
 Note: the placed order persists to Supabase, but the **Orders list still shows
 mock data** until Step 7 connects those reads.
 
-## 7. Connect Orders list and detail — code complete, migration pending
+## 7. Connect Orders list and detail — complete
 
 The order status model was **simplified** in this step (see
 [Order lifecycle contract](./order-lifecycle.md)). The kitchen workflow
@@ -127,7 +126,7 @@ Implemented in code:
   list re-fetches on focus so newly placed orders appear.
 - UI labels, timing text, and currency formatting are derived in the mappers/UI.
 
-**You still need to run the new migration (once):**
+**Completed setup:**
 
 1. Open the Supabase **SQL Editor**.
 2. Run the entire contents of
@@ -143,13 +142,31 @@ Implemented in code:
 Note: because the enum values change, `0003` must be run after `0001`/`0002`.
 Any orders placed earlier as `submitted` become `open` after the migration.
 
-## 8. Add authentication and RLS — we implement together
+## 8. Add authentication and RLS — code complete, setup pending
 
-1. Decide the staff sign-in experience and roles.
-2. Add Supabase Auth and a staff/profile model.
-3. Enable Row Level Security.
-4. Add store-scoped policies for catalog reads and order operations.
-5. Test using a normal staff account, not a service key.
+Implemented in code:
+
+- Email/password staff sign-in with persistent native sessions.
+- `owner`, `manager`, and `cashier` staff roles.
+- An app-owned Auth repository/provider and protected Expo Router routes.
+- A responsive sign-in screen and Profile settings sign-out action.
+- `staff_profiles`, store-scoped RLS, read-only Data API privileges, and guarded
+  authenticated order RPCs in `supabase/migrations/0004_auth_and_rls.sql`.
+- Order creation records the authenticated user in `orders.staff_id`.
+
+**You still need to configure Supabase (once):**
+
+1. Run all of
+   [`supabase/migrations/0004_auth_and_rls.sql`](../supabase/migrations/0004_auth_and_rls.sql)
+   in SQL Editor after migrations `0001`–`0003`.
+2. Create an email/password user in **Authentication → Users**.
+3. Link that Auth user to the seeded store with a `staff_profiles` row.
+4. Restart with `npm run dev:clear`, sign in, and test catalog/order access.
+5. Follow [Supabase Auth and RLS Setup](./supabase-auth-rls-testing.md), including
+   the cross-store isolation test. Use a normal staff account, not a service key.
+
+There is no public staff sign-up. Trusted operators create Auth users and assign
+their store/role; Step 9 can later add an owner-only staff-management surface.
 
 This must be in place before live Admin editing.
 
@@ -165,16 +182,13 @@ This must be in place before live Admin editing.
 
 ## What to do now
 
-Steps 5 and 6 are verified. The Step 7 code is in place. To finish Step 7:
+1. Run [`supabase/migrations/0004_auth_and_rls.sql`](../supabase/migrations/0004_auth_and_rls.sql).
+2. Create the first Auth user and matching `staff_profiles` row using
+   [Supabase Auth and RLS Setup](./supabase-auth-rls-testing.md).
+3. Restart Expo with `npm run dev:clear` and sign in.
+4. Verify catalog reads, order creation/reads/transitions, Sign out, and
+   cross-store isolation.
 
-1. Run [`supabase/migrations/0003_order_open_paid.sql`](../supabase/migrations/0003_order_open_paid.sql)
-   in the Supabase SQL Editor (after `0001` and `0002`).
-2. Restart Expo with `npm run dev:clear`.
-3. In the POS cart, try **Save** (creates an Open order) and **Charge** (creates
-   a Closed/paid order).
-4. Open the **Orders** screen and confirm the orders show under the **Open** and
-   **Closed** tabs; open an Open order and try **Mark as paid** / **Cancel order**.
-
-If anything fails, the UI shows the error message; share it and we can debug.
+If anything fails, share the exact UI or SQL error and we can debug it.
 
 Do **not** share the database password or `service_role` key.

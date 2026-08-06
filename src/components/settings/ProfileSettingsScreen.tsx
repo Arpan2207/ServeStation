@@ -1,6 +1,6 @@
 /**
  * Profile Settings screen.
- * UI-only profile and store preferences screen that follows the settings theme.
+ * Displays authenticated staff/store identity plus local profile preferences.
  */
 
 import React, { useMemo, useState } from "react";
@@ -10,6 +10,8 @@ import { StyleSheet } from "react-native-unistyles";
 
 import { Screen } from "@/components/ui/Screen";
 import { NoteDialog } from "@/components/primitives/NoteDialog";
+import { Button } from "@/components/ui/Button";
+import { useAuth } from "@/hooks/useAuth";
 import { colors } from "@/theme/colors";
 
 /** Editable text values displayed throughout the local profile screen. */
@@ -132,22 +134,32 @@ function AccessRow({ label, value, onPress }: { label: string; value: string; on
  */
 export function ProfileSettingsScreen() {
   const router = useRouter();
-  const [profile, setProfile] = useState<ProfileDraft>(INITIAL_PROFILE);
+  const { session, staffProfile, signOut } = useAuth();
+  const [profile, setProfile] = useState<ProfileDraft>(() => ({
+    ...INITIAL_PROFILE,
+    ownerName: staffProfile?.displayName ?? INITIAL_PROFILE.ownerName,
+    email: session?.email ?? INITIAL_PROFILE.email,
+    businessName: staffProfile?.storeName ?? INITIAL_PROFILE.businessName,
+    storeId: staffProfile?.storeId ?? INITIAL_PROFILE.storeId,
+  }));
   const [editingField, setEditingField] = useState<ProfileField | null>(null);
   const [fieldValue, setFieldValue] = useState("");
   const [orderAlerts, setOrderAlerts] = useState(true);
   const [dailyDigest, setDailyDigest] = useState(true);
   const [securityPrompts, setSecurityPrompts] = useState(false);
   const [saved, setSaved] = useState(false);
+  const roleLabel = staffProfile
+    ? staffProfile.role.charAt(0).toUpperCase() + staffProfile.role.slice(1)
+    : "Owner";
 
   /** Derived values keep the profile hero and stats current after local edits. */
   const quickStats = useMemo(
     () => [
-      { label: "Role", value: "Owner" },
+      { label: "Role", value: roleLabel },
       { label: "Last sync", value: saved ? "Just now" : "2 min ago" },
       { label: "Plan", value: "Pro" },
     ],
-    [saved]
+    [roleLabel, saved]
   );
   const avatarInitials = useMemo(
     () =>
@@ -186,9 +198,17 @@ export function ProfileSettingsScreen() {
               </Pressable>
               <Text style={styles.title}>Profile settings</Text>
             </View>
-            <Pressable style={styles.saveButton} onPress={() => setSaved(true)}>
-              <Text style={styles.saveLabel}>{saved ? "Changes saved" : "Save changes"}</Text>
-            </Pressable>
+            <View style={styles.headerActions}>
+              <Button
+                label="Sign out"
+                variant="outline"
+                style={styles.signOutButton}
+                onPress={() => void signOut()}
+              />
+              <Pressable style={styles.saveButton} onPress={() => setSaved(true)}>
+                <Text style={styles.saveLabel}>{saved ? "Changes saved" : "Save changes"}</Text>
+              </Pressable>
+            </View>
           </View>
 
           <ScrollView
@@ -202,7 +222,7 @@ export function ProfileSettingsScreen() {
               </View>
               <View style={styles.profileCopy}>
                 <Text style={styles.profileName}>{profile.ownerName}</Text>
-                <Text style={styles.profileMeta}>Owner account - {profile.businessName}</Text>
+                <Text style={styles.profileMeta}>{roleLabel} account - {profile.businessName}</Text>
               </View>
               <View style={styles.statusPill}>
                 <Text style={styles.statusText}>Verified</Text>
@@ -346,6 +366,16 @@ const styles = StyleSheet.create((theme) => ({
     flex: 1,
     minWidth: 0,
     gap: 5,
+  },
+  headerActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  signOutButton: {
+    minWidth: 96,
+    height: 42,
+    paddingVertical: 0,
   },
   backButton: {
     alignSelf: "flex-start",

@@ -85,8 +85,9 @@ flowchart LR
 ### Step 4 — Admin mutations
 - Back `AdminRepository` edits (field updates, add item, publish, stock) with
   Supabase writes.
-- Introduce auth + Row Level Security here (store-scoped policies, `staff_id`
-  FK, session handling), since mutations are the point that needs permissions.
+- Auth, staff roles, persistent sessions, and store-scoped read/order policies
+  landed in Step 8 of the setup checklist. Add owner/manager catalog-write
+  policies alongside the Admin adapter.
 
 ## Stays local in Phase 3 (even after the backend begins)
 
