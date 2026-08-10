@@ -7,25 +7,26 @@
  * stays usable from ~600dp tablets up to large landscape screens.
  */
 
-import React from "react";
+import React, { useState } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
 import { StyleSheet } from "react-native-unistyles";
+import { NoteDialog } from "@/components/primitives/NoteDialog";
 import { Chip } from "@/components/ui/Chip";
 import { Button } from "@/components/ui/Button";
 import { formatCurrency } from "@/domain/money";
 import type { PlacingAction } from "@/hooks/usePosState";
 import type { CartLine, OrderTotals, OrderType } from "@/types/pos";
 
-/** Static, cosmetic secondary actions (no behavior in this phase). */
-const ACTIONS = ["Send to kitchen", "Hold order", "Add note"] as const;
 const ORDER_TYPES: OrderType[] = ["Dine-in", "Pickup", "Delivery"];
+type PendingOrderAction = "save" | "charge" | null;
 
 interface CartPanelProps {
   cart: CartLine[];
   /** Header summary, e.g. "3 items · dine-in". */
-  summary: string;
   orderType: OrderType;
   onSelectOrderType: (type: OrderType) => void;
+  guestName: string;
+  onGuestNameChange: (name: string) => void;
   onClear: () => void;
   onIncrement: (lineId: string) => void;
   onDecrement: (lineId: string) => void;
@@ -48,9 +49,10 @@ interface CartPanelProps {
  */
 export function CartPanel({
   cart,
-  summary,
   orderType,
   onSelectOrderType,
+  guestName,
+  onGuestNameChange,
   onClear,
   onIncrement,
   onDecrement,
@@ -62,29 +64,52 @@ export function CartPanel({
   lastPlacedSummary,
 }: CartPanelProps) {
   const isEmpty = cart.length === 0;
+  const cartCount = cart.reduce((count, line) => count + line.qty, 0);
+  const itemCountLabel = `${cartCount} ${cartCount === 1 ? "item" : "items"}`;
   // While any submit is running, both actions are disabled to avoid double taps.
   const busy = placingAction !== null;
+  const [pendingOrderAction, setPendingOrderAction] =
+    useState<PendingOrderAction>(null);
+  const [guestNameError, setGuestNameError] = useState<string | null>(null);
+
+  const openGuestNameDialog = (action: Exclude<PendingOrderAction, null>) => {
+    if (isEmpty || busy) return;
+    setGuestNameError(null);
+    setPendingOrderAction(action);
+  };
+
+  const submitGuestName = () => {
+    if (!guestName.trim()) {
+      setGuestNameError("Enter a guest name to continue.");
+      return;
+    }
+
+    const action = pendingOrderAction;
+    setPendingOrderAction(null);
+    setGuestNameError(null);
+    if (action === "save") onSaveOrder();
+    if (action === "charge") onChargeOrder();
+  };
 
   return (
     <View style={styles.sidebar}>
       {/* Header */}
-      <View style={styles.header}>
-        <View style={styles.headerLeft}>
-          <Text style={styles.headerTitle}>Current cart</Text>
-          <Text style={styles.headerMeta}>{summary}</Text>
+      {/* Order type chips — wraps when the sidebar is narrow */}
+      <View style={styles.fulfilmentControls}>
+        <View style={styles.orderTypes}>
+          {ORDER_TYPES.map((t) => (
+            <Pressable key={t} onPress={() => onSelectOrderType(t)}>
+              <Chip label={t} active={t === orderType} dark={t !== orderType} />
+            </Pressable>
+          ))}
         </View>
         <Pressable style={styles.clearBtn} onPress={onClear}>
           <Text style={styles.clearLabel}>Clear</Text>
         </Pressable>
       </View>
 
-      {/* Order type chips — wraps when the sidebar is narrow */}
-      <View style={styles.orderTypes}>
-        {ORDER_TYPES.map((t) => (
-          <Pressable key={t} onPress={() => onSelectOrderType(t)}>
-            <Chip label={t} active={t === orderType} dark={t !== orderType} />
-          </Pressable>
-        ))}
+      <View style={styles.itemCountRow}>
+        <Text style={styles.itemCount}>{itemCountLabel}</Text>
       </View>
 
       {/* Cart items (scrollable) */}
@@ -130,13 +155,6 @@ export function CartPanel({
         )}
       </ScrollView>
 
-      {/* Action buttons (cosmetic) */}
-      <View style={styles.actions}>
-        {ACTIONS.map((a) => (
-          <Button key={a} label={a} variant="ghost" style={styles.actionBtn} />
-        ))}
-      </View>
-
       {/* Totals */}
       <View style={styles.totals}>
         <TotalRow label="Subtotal" value={formatCurrency(totals.subtotal)} />
@@ -157,7 +175,7 @@ export function CartPanel({
             label={placingAction === "save" ? "Saving…" : "Save order"}
             variant="ghost"
             style={styles.saveBtn}
-            onPress={busy ? () => {} : onSaveOrder}
+            onPress={() => openGuestNameDialog("save")}
           />
           <Button
             label={
@@ -167,10 +185,30 @@ export function CartPanel({
             }
             variant="primary"
             style={styles.chargeBtn}
-            onPress={busy ? () => {} : onChargeOrder}
+            onPress={() => openGuestNameDialog("charge")}
           />
         </View>
       </View>
+
+      <NoteDialog
+        visible={pendingOrderAction !== null}
+        title="Guest name"
+        description={`Enter the name to ${pendingOrderAction === "charge" ? "charge" : "save"} this order.`}
+        value={guestName}
+        placeholder="Enter guest name"
+        saveLabel={pendingOrderAction === "charge" ? "Charge order" : "Save order"}
+        multiline={false}
+        errorMessage={guestNameError}
+        onChangeText={(name) => {
+          onGuestNameChange(name);
+          setGuestNameError(null);
+        }}
+        onDismiss={() => {
+          setPendingOrderAction(null);
+          setGuestNameError(null);
+        }}
+        onSave={submitGuestName}
+      />
     </View>
   );
 }
@@ -223,30 +261,6 @@ const styles = StyleSheet.create((theme) => ({
   },
 
   /* Header */
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-  headerLeft: {
-    flex: 1,
-    gap: 3,
-  },
-  headerTitle: {
-    fontFamily: theme.typography.fontFamily.body,
-    fontSize: {
-      xs: theme.typography.size["2xl"],
-      md: theme.typography.size["3xl"],
-    },
-    color: theme.colors.textOnPrimary,
-    letterSpacing: -0.84,
-  },
-  headerMeta: {
-    fontFamily: theme.typography.fontFamily.body,
-    fontSize: theme.typography.size.sm,
-    color: theme.colors.textOnPrimary,
-    opacity: 0.65,
-  },
   clearBtn: {
     backgroundColor: theme.colors.sidebarControl,
     borderRadius: theme.radii.md,
@@ -263,9 +277,24 @@ const styles = StyleSheet.create((theme) => ({
 
   /* Order type pills — flex-wrap prevents overflow on tight widths */
   orderTypes: {
+    flex: 1,
     flexDirection: "row",
     flexWrap: "wrap",
     gap: 8,
+  },
+  fulfilmentControls: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 8,
+  },
+  itemCountRow: {
+    alignItems: "flex-start",
+  },
+  itemCount: {
+    fontFamily: theme.typography.fontFamily.body,
+    fontSize: theme.typography.size.sm,
+    color: theme.colors.textOnPrimary,
+    opacity: 0.65,
   },
 
   /* Cart item list */
@@ -353,19 +382,6 @@ const styles = StyleSheet.create((theme) => ({
   },
 
   /* Actions row — wraps on tight widths */
-  actions: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: {
-      xs: 6,
-      md: 8,
-    },
-  },
-  actionBtn: {
-    flex: 1,
-    minWidth: 70,
-  },
-
   /* Totals section */
   totals: {
     borderTopWidth: 1.17,

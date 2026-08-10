@@ -167,9 +167,10 @@ export function HomePosScreen() {
         {/* ── Right pane (cart) ── */}
         <CartPanel
           cart={pos.cart}
-          summary={pos.cartSummary}
           orderType={pos.orderType}
           onSelectOrderType={pos.setOrderType}
+          guestName={pos.guestName}
+          onGuestNameChange={pos.setGuestName}
           onClear={pos.clearCart}
           onIncrement={pos.incrementLine}
           onDecrement={pos.decrementLine}

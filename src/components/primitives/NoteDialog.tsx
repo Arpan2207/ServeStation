@@ -23,6 +23,10 @@ export interface NoteDialogProps {
   placeholder?: string;
   /** Optional confirmation label; defaults to "Save note". */
   saveLabel?: string;
+  /** Whether the input accepts multiple lines; defaults to true for notes. */
+  multiline?: boolean;
+  /** Optional validation feedback displayed below the input. */
+  errorMessage?: string | null;
   /** Updates the caller-owned note text as the user types. */
   onChangeText: (text: string) => void;
   /** Closes the dialog without applying a new action. */
@@ -43,6 +47,8 @@ export function NoteDialog({
   value,
   placeholder = "e.g. Sauce on the side",
   saveLabel = "Save note",
+  multiline = true,
+  errorMessage,
   onChangeText,
   onDismiss,
   onSave,
@@ -58,10 +64,13 @@ export function NoteDialog({
             onChangeText={onChangeText}
             placeholder={placeholder}
             placeholderTextColor={styles.description.color}
-            style={styles.input}
-            multiline
+            style={[styles.input, !multiline && styles.singleLineInput]}
+            multiline={multiline}
+            returnKeyType={multiline ? "default" : "done"}
+            onSubmitEditing={multiline ? undefined : onSave}
             autoFocus
           />
+          {errorMessage ? <Text style={styles.error}>{errorMessage}</Text> : null}
           <View style={styles.actions}>
             <Pressable style={styles.cancelButton} onPress={onDismiss}>
               <Text style={styles.cancelLabel}>Cancel</Text>
@@ -115,6 +124,16 @@ const styles = StyleSheet.create((theme) => ({
     fontFamily: theme.typography.fontFamily.body,
     fontSize: theme.typography.size.md,
     color: theme.colors.textPrimary,
+  },
+  singleLineInput: {
+    minHeight: 46,
+    height: 46,
+    textAlignVertical: "center",
+  },
+  error: {
+    fontFamily: theme.typography.fontFamily.body,
+    fontSize: theme.typography.size.sm,
+    color: theme.colors.danger,
   },
   actions: {
     flexDirection: "row",

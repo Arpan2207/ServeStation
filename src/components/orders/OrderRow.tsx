@@ -1,8 +1,7 @@
 /**
  * A single Figma-aligned order row shown in the Orders List (node 186:2).
- * Updated design: the top pill shows the order destination (e.g. "Table 14",
- * "Pickup", "Delivery") colored by order type, the title reads
- * "#<number> · <customer>", and a compact meta line sits below.
+ * Its darker fulfillment marker is layered behind the guest name:
+ * dine-in = orange, pickup = blue, delivery = purple.
  */
 
 import React from "react";
@@ -31,33 +30,21 @@ function orderMetaLine(order: Order): string {
 export function OrderRow({ order, selected, onPress }: OrderRowProps) {
   const Wrapper = onPress ? Pressable : View;
   return (
-    <Wrapper
-      style={[styles.row, selected && styles.rowSelected]}
-      onPress={onPress}
-    >
+    <Wrapper style={[styles.row, selected && styles.rowSelected]} onPress={onPress}>
       <View style={styles.inner}>
         <View style={styles.content}>
-          <View
-            style={[
-              styles.pill,
-              order.orderType === "pickup" && styles.pillPickup,
-              order.orderType === "delivery" && styles.pillDelivery,
-            ]}
-          >
-            <Text
+          <View style={styles.titleRow}>
+            <Text style={styles.orderTitle}>#{order.orderNumber} · </Text>
+            <View
               style={[
-                styles.pillText,
-                order.orderType === "pickup" && styles.pillTextPickup,
-                order.orderType === "delivery" && styles.pillTextDelivery,
+                styles.guestNameWrap,
+                order.orderType === "pickup" && styles.guestNamePickup,
+                order.orderType === "delivery" && styles.guestNameDelivery,
               ]}
             >
-              {order.destination}
-            </Text>
+              <Text style={styles.orderTitle}>{order.customer}</Text>
+            </View>
           </View>
-
-          <Text style={styles.orderTitle}>
-            #{order.orderNumber} · {order.customer}
-          </Text>
           <Text style={styles.meta}>{orderMetaLine(order)}</Text>
         </View>
 
@@ -94,34 +81,25 @@ const styles = StyleSheet.create((theme) => ({
     alignItems: "flex-start",
     gap: 10,
   },
-
-  /* Destination pill — default (dine-in) is orange */
-  pill: {
-    borderRadius: 999,
-    backgroundColor: theme.colors.primaryLighter,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+  titleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    minWidth: 0,
   },
-  pillPickup: {
-    backgroundColor: "#deeaff",
+  guestNameWrap: {
+    flexShrink: 1,
+    minWidth: 0,
+    backgroundColor: "#f8cba3",
+    borderRadius: 8,
+    paddingHorizontal: 5,
+    marginHorizontal: -5,
   },
-  pillDelivery: {
-    backgroundColor: "#e9e2ff",
+  guestNamePickup: {
+    backgroundColor: "#c9dcfb",
   },
-  pillText: {
-    fontFamily: theme.typography.fontFamily.label,
-    fontSize: 12,
-    lineHeight: 16,
-    color: theme.colors.primary,
-    fontWeight: "600",
+  guestNameDelivery: {
+    backgroundColor: "#d8caf6",
   },
-  pillTextPickup: {
-    color: "#346aff",
-  },
-  pillTextDelivery: {
-    color: "#6a3bff",
-  },
-
   orderTitle: {
     fontFamily: theme.typography.fontFamily.label,
     fontSize: 18,
