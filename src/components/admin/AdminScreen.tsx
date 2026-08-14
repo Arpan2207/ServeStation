@@ -2,10 +2,8 @@
  * Admin workspace screen — Figma MCP node 164:2.
  * Three-column layout: categories panel, item browser, and editor panel.
  *
- * Interactive (frontend-only): category selection filters the item browser,
- * the search bar and filter chips narrow the list, selecting an item loads it
- * into the editor, and the editor fields/chips/buttons mutate local state via
- * useAdminState(). Nothing is persisted or sent to a backend.
+ * Owner/manager catalog edits are persisted through useAdminState and the
+ * active Admin repository; cashier accounts remain read-only at the route UI.
  */
 
 import React, { useState } from "react";
@@ -15,31 +13,17 @@ import { StyleSheet } from "react-native-unistyles";
 import { Screen } from "@/components/ui/Screen";
 import { Button } from "@/components/ui/Button";
 import { useAdminState } from "@/hooks/useAdminState";
+import { useAuth } from "@/hooks/useAuth";
 import type { AdminCategoryWithCount } from "@/hooks/useAdminState";
 import { adminRepository } from "@/repositories";
 import type {
   AdminEditableField,
   AdminMenuItem,
+  AdminModifierOption,
 } from "@/types/admin";
 
 /** Filter chips sourced through the repository boundary. */
 const ADMIN_FILTER_CHIPS = adminRepository.getFilterChips();
-
-interface ModifierOptionDraft {
-  id: string;
-  label: string;
-  /** Numeric dollar amount stored as editable text; 0.00 means Free. */
-  price: string;
-}
-
-const MODIFIER_OPTION_DRAFTS: ModifierOptionDraft[] = [
-  { id: "no-onions", label: "No onions", price: "0.00" },
-  { id: "light-sauce", label: "Light sauce", price: "0.00" },
-  { id: "extra-pickles", label: "Extra pickles", price: "0.50" },
-  { id: "gf-bun", label: "Gluten-free bun", price: "1.50" },
-  { id: "add-avocado", label: "Add avocado", price: "1.25" },
-  { id: "no-tomato", label: "No tomato", price: "0.00" },
-];
 
 /* ── Small local helpers ─────────────────────────────── */
 
@@ -101,7 +85,7 @@ function EditableField({
 }
 
 /**
- * Editable local modifier-option capsule. A zero price means the option is
+ * Editable modifier-option capsule. A zero price means the option is
  * free, while any decimal amount becomes its custom upcharge.
  * @param props Option state and field-change handler.
  */
@@ -109,7 +93,7 @@ function ModifierOptionBox({
   option,
   onChange,
 }: {
-  option: ModifierOptionDraft;
+  option: AdminModifierOption;
   onChange: (field: "label" | "price", value: string) => void;
 }) {
   return (
@@ -221,6 +205,7 @@ function AdminItemEditor({
   modifierOptions,
   onChangeModifierOption,
   onSaveModifiers,
+  saving,
 }: {
   item: AdminMenuItem;
   feedback: string | null;
@@ -228,13 +213,14 @@ function AdminItemEditor({
   onMarkUnavailable: () => void;
   onMarkInStock: () => void;
   onPublish: () => void;
-  modifierOptions: ModifierOptionDraft[];
+  modifierOptions: AdminModifierOption[];
   onChangeModifierOption: (
     optionId: string,
     field: "label" | "price",
     value: string
   ) => void;
   onSaveModifiers: () => void;
+  saving: boolean;
 }) {
   return (
     <>
@@ -275,8 +261,12 @@ function AdminItemEditor({
           <View style={styles.modifierHeaderCopy}>
             <Text style={styles.fieldLabel}>Modifier groups</Text>
           </View>
-          <Pressable style={styles.modifierAddGroupBtn} onPress={onSaveModifiers}>
-            <Text style={styles.modifierAddGroupLabel}>Save</Text>
+          <Pressable
+            disabled={saving}
+            style={styles.modifierAddGroupBtn}
+            onPress={onSaveModifiers}
+          >
+            <Text style={styles.modifierAddGroupLabel}>{saving ? "Saving…" : "Save"}</Text>
           </Pressable>
         </View>
 
@@ -296,14 +286,14 @@ function AdminItemEditor({
 
       {/* Action buttons */}
       <View style={styles.editorActions}>
-        <Pressable style={styles.editorBtnSecondary} onPress={onMarkUnavailable}>
+        <Pressable disabled={saving} style={styles.editorBtnSecondary} onPress={onMarkUnavailable}>
           <Text style={styles.editorBtnSecondaryLabel}>Mark unavailable</Text>
         </Pressable>
-        <Pressable style={styles.editorBtnSecondary} onPress={onMarkInStock}>
+        <Pressable disabled={saving} style={styles.editorBtnSecondary} onPress={onMarkInStock}>
           <Text style={styles.editorBtnSecondaryLabel}>Mark In stock</Text>
         </Pressable>
-        <Pressable style={styles.editorBtnPrimary} onPress={onPublish}>
-          <Text style={styles.editorBtnPrimaryLabel}>Publish item</Text>
+        <Pressable disabled={saving} style={styles.editorBtnPrimary} onPress={onPublish}>
+          <Text style={styles.editorBtnPrimaryLabel}>Save &amp; publish</Text>
         </Pressable>
       </View>
     </>
@@ -314,44 +304,75 @@ function AdminItemEditor({
 
 export function AdminScreen() {
   const admin = useAdminState();
+  const { staffProfile } = useAuth();
   const { selectedItem } = admin;
-  const [modifierOptions, setModifierOptions] = useState(MODIFIER_OPTION_DRAFTS);
-  const [modifierSaveMessage, setModifierSaveMessage] = useState<string | null>(null);
   const [newCategoryName, setNewCategoryName] = useState("");
   const [isAddingCategory, setIsAddingCategory] = useState(false);
   const [isConfirmingCategoryDelete, setIsConfirmingCategoryDelete] = useState(false);
   const selectedCategory = admin.categories.find((category) => category.id === admin.selectedCategoryId);
 
-  /** Update a single modifier option field in the local editor draft. */
-  const updateModifierOption = (
-    optionId: string,
-    field: "label" | "price",
-    value: string
-  ) => {
-    setModifierSaveMessage(null);
-    setModifierOptions((options) =>
-      options.map((option) => (option.id === optionId ? { ...option, [field]: value } : option))
-    );
-  };
-
-  /** Keep modifier editing local-only while providing clear Save feedback. */
-  const saveModifiers = () => {
-    // This design pass deliberately does not persist modifier data yet.
-    // Save acknowledges the current local selections without changing the catalog.
-    setModifierSaveMessage("Modifier options saved locally.");
-  };
-
-  const addCategory = () => {
-    if (admin.addCategory(newCategoryName)) {
+  const addCategory = async () => {
+    if (await admin.addCategory(newCategoryName)) {
       setNewCategoryName("");
       setIsAddingCategory(false);
     }
   };
 
-  const deleteCategory = () => {
-    admin.deleteCategory();
+  const deleteCategory = async () => {
+    await admin.deleteCategory();
     setIsConfirmingCategoryDelete(false);
   };
+
+  const canManageCatalog =
+    !staffProfile || staffProfile.role === "owner" || staffProfile.role === "manager";
+
+  if (!canManageCatalog) {
+    return (
+      <Screen>
+        <View style={styles.screen}>
+          <View style={styles.frame}>
+            <View style={styles.emptyCard}>
+              <Text style={styles.emptyTitle}>Admin access required</Text>
+              <Text style={styles.emptyText}>
+                Catalog changes are limited to owner and manager accounts.
+              </Text>
+            </View>
+          </View>
+        </View>
+      </Screen>
+    );
+  }
+
+  if (admin.loading && admin.categories.length === 0) {
+    return (
+      <Screen>
+        <View style={styles.screen}>
+          <View style={styles.frame}>
+            <View style={styles.emptyCard}>
+              <Text style={styles.emptyTitle}>Loading catalog…</Text>
+              <Text style={styles.emptyText}>Fetching the latest menu for this store.</Text>
+            </View>
+          </View>
+        </View>
+      </Screen>
+    );
+  }
+
+  if (admin.error && admin.categories.length === 0) {
+    return (
+      <Screen>
+        <View style={styles.screen}>
+          <View style={styles.frame}>
+            <View style={styles.emptyCard}>
+              <Text style={styles.emptyTitle}>Catalog unavailable</Text>
+              <Text style={styles.emptyText}>{admin.error}</Text>
+              <Button label="Try again" onPress={admin.reload} />
+            </View>
+          </View>
+        </View>
+      </Screen>
+    );
+  }
 
   return (
     <Screen>
@@ -364,11 +385,15 @@ export function AdminScreen() {
               <Pressable style={styles.bulkEditBtn} onPress={admin.bulkEdit}>
                 <Text style={styles.bulkEditLabel}>Bulk edit</Text>
               </Pressable>
-              <Pressable style={styles.addItemBtn} onPress={admin.addItem}>
-                <Text style={styles.addItemLabel}>Add item</Text>
+              <Pressable disabled={admin.saving} style={styles.addItemBtn} onPress={admin.addItem}>
+                <Text style={styles.addItemLabel}>{admin.saving ? "Saving…" : "Add item"}</Text>
               </Pressable>
             </View>
           </View>
+
+          {!selectedItem && (admin.error || admin.feedback) && (
+            <Text style={styles.feedback}>{admin.error ?? admin.feedback}</Text>
+          )}
 
           {/* Utility row: search + filter chips */}
           <View style={styles.utilityRow}>
@@ -423,7 +448,12 @@ export function AdminScreen() {
                     autoFocus
                     returnKeyType="done"
                   />
-                  <Button label="Create" onPress={addCategory} style={styles.categoryCreateButton} />
+                  <Button
+                    label={admin.saving ? "Creating…" : "Create"}
+                    onPress={addCategory}
+                    disabled={admin.saving}
+                    style={styles.categoryCreateButton}
+                  />
                 </View>
               )}
               <ScrollView
@@ -445,13 +475,17 @@ export function AdminScreen() {
                   {isConfirmingCategoryDelete ? (
                     <>
                       <Text style={styles.categoryDeleteCopy}>
-                        Remove {selectedCategory.name} and its {selectedCategory.count} local item(s)?
+                        Remove {selectedCategory.name} and its {selectedCategory.count} catalog item(s)?
                       </Text>
                       <View style={styles.categoryDeleteActions}>
                         <Pressable onPress={() => setIsConfirmingCategoryDelete(false)} style={styles.categoryCancelButton}>
                           <Text style={styles.categoryCancelLabel}>Cancel</Text>
                         </Pressable>
-                        <Pressable onPress={deleteCategory} style={styles.categoryDeleteButton}>
+                        <Pressable
+                          disabled={admin.saving}
+                          onPress={deleteCategory}
+                          style={styles.categoryDeleteButton}
+                        >
                           <Text style={styles.categoryDeleteLabel}>Delete</Text>
                         </Pressable>
                       </View>
@@ -505,14 +539,15 @@ export function AdminScreen() {
                 {selectedItem ? (
                   <AdminItemEditor
                     item={selectedItem}
-                    feedback={modifierSaveMessage ?? admin.feedback}
+                    feedback={admin.error ?? admin.feedback}
                     onChangeField={admin.updateField}
                     onMarkUnavailable={admin.markUnavailable}
                     onMarkInStock={admin.markInStock}
                     onPublish={admin.publishItem}
-                    modifierOptions={modifierOptions}
-                    onChangeModifierOption={updateModifierOption}
-                    onSaveModifiers={saveModifiers}
+                    modifierOptions={admin.modifierOptions}
+                    onChangeModifierOption={admin.updateModifierOption}
+                    onSaveModifiers={admin.saveModifierOptions}
+                    saving={admin.saving}
                   />
                 ) : (
                   /* Empty editor state keeps the right column layout stable */
