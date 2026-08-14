@@ -119,8 +119,9 @@ SQL.)
   record; do not re-add `payment_reference`-style columns to `orders`.
 - **Refunds** → future append-only `refunds` / `order_adjustments` history.
 - **Customer notifications** → future `order_events` / notification table.
-- **Admin mutation permissions** → Step 8 supplies staff Auth and store-scoped
-  RLS; Step 9 adds owner/manager catalog-write policies.
+- **Admin mutation permissions are implemented** → Step 8 supplies staff Auth
+  and store-scoped RLS; Step 9 adds owner/manager catalog-write policies and
+  guarded category/modifier RPCs.
 
 ---
 

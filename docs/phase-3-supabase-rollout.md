@@ -82,12 +82,11 @@ flowchart LR
 - Update the POS `placeOrder` flow to call `ordersRepository.createOrder(...)`
   (build `OrderCreateInput` from the cart) instead of only resetting local state.
 
-### Step 4 — Admin mutations
-- Back `AdminRepository` edits (field updates, add item, publish, stock) with
-  Supabase writes.
-- Auth, staff roles, persistent sessions, and store-scoped read/order policies
-  landed in Step 8 of the setup checklist. Add owner/manager catalog-write
-  policies alongside the Admin adapter.
+### Step 4 — Admin mutations (implemented; migration setup pending)
+- `AdminRepository` edits (category/item/modifier changes, publishing, and
+  availability) now use Supabase writes.
+- Owner/manager catalog-write policies and guarded category/modifier RPCs live
+  in `supabase/migrations/0005_admin_catalog_mutations.sql`.
 
 ## Stays local in Phase 3 (even after the backend begins)
 

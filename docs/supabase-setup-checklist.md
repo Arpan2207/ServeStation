@@ -7,10 +7,10 @@ architecture behind these steps in more detail.
 
 ## Current position
 
-Steps 1–7 are complete. Step 8 code is implemented; the Auth/RLS migration and
-first staff account must now be configured in Supabase.
+Steps 1–8 are complete. Step 9 code is implemented; its Admin mutation migration
+must now be applied and verified in Supabase.
 
-**Next step: run `0004_auth_and_rls.sql` and create the first staff profile.**
+**Next step: run `0005_admin_catalog_mutations.sql` and test an Admin edit.**
 
 ---
 
@@ -142,7 +142,7 @@ Implemented in code:
 Note: because the enum values change, `0003` must be run after `0001`/`0002`.
 Any orders placed earlier as `submitted` become `open` after the migration.
 
-## 8. Add authentication and RLS — code complete, setup pending
+## 8. Add authentication and RLS — complete
 
 Implemented in code:
 
@@ -154,7 +154,7 @@ Implemented in code:
   authenticated order RPCs in `supabase/migrations/0004_auth_and_rls.sql`.
 - Order creation records the authenticated user in `orders.staff_id`.
 
-**You still need to configure Supabase (once):**
+**Completed setup:**
 
 1. Run all of
    [`supabase/migrations/0004_auth_and_rls.sql`](../supabase/migrations/0004_auth_and_rls.sql)
@@ -170,24 +170,43 @@ their store/role; Step 9 can later add an owner-only staff-management surface.
 
 This must be in place before live Admin editing.
 
-## 9. Connect Admin mutations — we implement this
+## 9. Connect Admin mutations — code complete, setup pending
 
-1. Build a Supabase-backed `AdminRepository`.
-2. Persist category/item/modifier edits and availability changes.
-3. Apply the authenticated staff/RLS policies.
-4. Verify menu edits are reflected in the POS catalog without changing
-   submitted-order snapshots.
+Implemented in code:
+
+- A Supabase-backed `AdminRepository` loads draft and visible catalog data and
+  persists category creation/deletion, draft item creation, item publishing,
+  availability, and up to six custom modifier options.
+- Owner/manager mutation policies remain scoped to the authenticated staff
+  store. Cashiers retain catalog reads but cannot mutate catalog rows.
+- Category deletion and modifier replacement use guarded transactional RPCs.
+  Catalog foreign keys keep existing order name/price/modifier snapshots intact.
+- The POS catalog invalidates and reloads whenever the POS screen regains focus,
+  so newly published Admin changes are shown without restarting the app.
+
+**You still need to configure Supabase (once):**
+
+1. Run all of
+   [`supabase/migrations/0005_admin_catalog_mutations.sql`](../supabase/migrations/0005_admin_catalog_mutations.sql)
+   in SQL Editor after migration `0004`.
+2. Sign in as an `owner` or `manager`, open **Settings → Admin options**, and:
+   create a category/item, edit its name/description/price, press
+   **Save & publish**, change availability, and save modifier options.
+3. Return to the POS screen and confirm the published item, price, availability,
+   and modifiers reflect the Admin changes.
+4. Open an order placed before the edit and confirm its snapshotted item name,
+   price, and modifiers did not change.
+5. Sign in as a `cashier` and confirm the Admin workspace is denied and direct
+   catalog mutations are rejected by RLS.
 
 ---
 
 ## What to do now
 
-1. Run [`supabase/migrations/0004_auth_and_rls.sql`](../supabase/migrations/0004_auth_and_rls.sql).
-2. Create the first Auth user and matching `staff_profiles` row using
-   [Supabase Auth and RLS Setup](./supabase-auth-rls-testing.md).
-3. Restart Expo with `npm run dev:clear` and sign in.
-4. Verify catalog reads, order creation/reads/transitions, Sign out, and
-   cross-store isolation.
+1. Run
+   [`supabase/migrations/0005_admin_catalog_mutations.sql`](../supabase/migrations/0005_admin_catalog_mutations.sql).
+2. Restart Expo with `npm run dev:clear` and sign in as an owner or manager.
+3. Complete the Step 9 Admin → POS → historical-order verification above.
 
 If anything fails, share the exact UI or SQL error and we can debug it.
 
