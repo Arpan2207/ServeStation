@@ -119,11 +119,20 @@ function mapOrderRow(row: OrderRow): CanonicalOrder {
 /** Build the Supabase-backed orders repository. */
 export function createSupabaseOrdersRepository(): OrdersRepository {
   let storeIdCache: string | null | undefined;
+  let storeIdCacheUserId: string | null = null;
 
   /** Resolve (and memoize) the default store id from the seeded store. */
   async function resolveDefaultStoreId(): Promise<string | null> {
-    if (storeIdCache !== undefined) return storeIdCache;
     const supabase = getSupabaseClient();
+    const { data: authData, error: authError } = await supabase.auth.getUser();
+    if (authError) throw new Error(`Failed to resolve staff session: ${authError.message}`);
+    const userId = authData.user?.id ?? null;
+    if (storeIdCacheUserId !== userId) {
+      storeIdCache = undefined;
+      storeIdCacheUserId = userId;
+    }
+    if (storeIdCache !== undefined) return storeIdCache;
+
     const { data, error } = await supabase
       .from("stores")
       .select("id")
@@ -212,10 +221,14 @@ export function createSupabaseOrdersRepository(): OrdersRepository {
     async createOrder(input): Promise<CanonicalOrder> {
       const supabase = getSupabaseClient();
       const storeId = input.storeId ?? (await resolveDefaultStoreId()) ?? undefined;
+      const { data: authData, error: authError } = await supabase.auth.getUser();
+      if (authError || !authData.user) {
+        throw new Error(authError?.message ?? "A staff session is required to place orders.");
+      }
 
       // Build the canonical order (single source of the shape + money integrity),
       // then persist it verbatim. `paid` decides the entry status.
-      const order = buildOrder({ ...input, storeId });
+      const order = buildOrder({ ...input, storeId, staffId: authData.user.id });
 
       const itemsPayload = order.items.map((item) => ({
         menu_item_id: item.menuItemId ?? null,

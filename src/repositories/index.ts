@@ -1,26 +1,35 @@
 /**
  * Repository singletons — the app's single entry point for data access.
  *
- * Screens and hooks import `menuRepository` / `ordersRepository` /
- * `adminRepository` from here and depend only on the interfaces in `./types`.
- * Today these are wired to the mock adapters; adopting Supabase later means
- * swapping the factory calls below (or selecting an adapter by env) — no screen
- * or hook has to change.
+ * Screens and hooks import `menuRepository`, `ordersRepository`,
+ * `authRepository`, or `adminRepository` from here and depend only on the
+ * interfaces in `./types`.
+ * Environment configuration selects Supabase catalog, order, and auth adapters;
+ * mock adapters preserve the zero-setup local workflow. Screens and hooks do
+ * not change when the active backend changes.
  */
 
 import { createMockAdminRepository } from "./adapters/mock/adminMockRepository";
+import { createMockAuthRepository } from "./adapters/mock/authMockRepository";
 import { createMockMenuRepository } from "./adapters/mock/menuMockRepository";
 import { createMockOrdersRepository } from "./adapters/mock/ordersMockRepository";
 import { createSupabaseMenuRepository } from "./adapters/supabase/menuSupabaseRepository";
 import { createSupabaseOrdersRepository } from "./adapters/supabase/ordersSupabaseRepository";
-import type { AdminRepository, MenuRepository, OrdersRepository } from "./types";
+import { createSupabaseAuthRepository } from "./adapters/supabase/authSupabaseRepository";
+import { createSupabaseAdminRepository } from "./adapters/supabase/adminSupabaseRepository";
+import type {
+  AdminRepository,
+  AuthRepository,
+  MenuRepository,
+  OrdersRepository,
+} from "./types";
 
 /**
  * True when both public Supabase env values are present. Used to select the
  * Supabase-backed adapters; without them the app falls back to mock data so it
  * still runs in environments that have not configured Supabase.
  */
-const supabaseConfigured =
+export const supabaseConfigured =
   !!process.env.EXPO_PUBLIC_SUPABASE_URL &&
   !!process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
 
@@ -41,7 +50,19 @@ export const ordersRepository: OrdersRepository = supabaseConfigured
   ? createSupabaseOrdersRepository()
   : createMockOrdersRepository();
 
-/** Active admin catalog repository (mock-backed for now). */
-export const adminRepository: AdminRepository = createMockAdminRepository();
+/** Active authentication repository. Supabase mode requires staff sign-in. */
+export const authRepository: AuthRepository = supabaseConfigured
+  ? createSupabaseAuthRepository()
+  : createMockAuthRepository();
 
-export type { AdminRepository, MenuRepository, OrdersRepository } from "./types";
+/** Active Admin catalog repository, including Step 9 mutations. */
+export const adminRepository: AdminRepository = supabaseConfigured
+  ? createSupabaseAdminRepository()
+  : createMockAdminRepository();
+
+export type {
+  AdminRepository,
+  AuthRepository,
+  MenuRepository,
+  OrdersRepository,
+} from "./types";

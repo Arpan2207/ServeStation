@@ -60,5 +60,8 @@ export function createMockMenuRepository(): MenuRepository {
         modifierGroups,
       };
     },
+    invalidateCatalog() {
+      // Static mock data has no cache to invalidate.
+    },
   };
 }

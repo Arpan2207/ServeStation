@@ -7,11 +7,10 @@ architecture behind these steps in more detail.
 
 ## Current position
 
-Steps 1–6 are done and verified (catalog + order creation persist to Supabase).
-Step 7 code (Orders list/detail reads + the simplified `open`/`paid`/`cancelled`
-model) is in place and needs its migration run.
+Steps 1–8 are complete. Step 9 code is implemented; its Admin mutation migration
+must now be applied and verified in Supabase.
 
-**Next step: run `0003_order_open_paid.sql` (see Step 7).**
+**Next step: run `0005_admin_catalog_mutations.sql` and test an Admin edit.**
 
 ---
 
@@ -59,7 +58,7 @@ Future order-status changes must use that function instead of direct updates.
 
 Never use or place the Supabase `service_role` key in the React Native app.
 
-## 5. Connect catalog reads — code complete, seed pending
+## 5. Connect catalog reads — complete
 
 Implemented in code:
 
@@ -69,7 +68,7 @@ Implemented in code:
   via the new `src/hooks/useCatalog.ts`, and the POS screen shows
   loading / error (with retry) / empty states.
 
-**You still need to seed the database (once):**
+**Completed setup:**
 
 1. Open the Supabase **SQL Editor**.
 2. Run the entire contents of
@@ -81,7 +80,7 @@ Implemented in code:
 
 The cart remains device-local at this stage.
 
-## 6. Connect order creation — code complete, migration pending
+## 6. Connect order creation — complete
 
 Implemented in code:
 
@@ -94,7 +93,7 @@ Implemented in code:
 - POS **Place order** builds `OrderCreateInput` from the cart, persists it, then
   clears the cart. The cart shows placing / success / error states.
 
-**You still need to run the new migration (once):**
+**Completed setup:**
 
 1. Open the Supabase **SQL Editor**.
 2. Run the entire contents of
@@ -106,7 +105,7 @@ Implemented in code:
 Note: the placed order persists to Supabase, but the **Orders list still shows
 mock data** until Step 7 connects those reads.
 
-## 7. Connect Orders list and detail — code complete, migration pending
+## 7. Connect Orders list and detail — complete
 
 The order status model was **simplified** in this step (see
 [Order lifecycle contract](./order-lifecycle.md)). The kitchen workflow
@@ -127,7 +126,7 @@ Implemented in code:
   list re-fetches on focus so newly placed orders appear.
 - UI labels, timing text, and currency formatting are derived in the mappers/UI.
 
-**You still need to run the new migration (once):**
+**Completed setup:**
 
 1. Open the Supabase **SQL Editor**.
 2. Run the entire contents of
@@ -143,38 +142,72 @@ Implemented in code:
 Note: because the enum values change, `0003` must be run after `0001`/`0002`.
 Any orders placed earlier as `submitted` become `open` after the migration.
 
-## 8. Add authentication and RLS — we implement together
+## 8. Add authentication and RLS — complete
 
-1. Decide the staff sign-in experience and roles.
-2. Add Supabase Auth and a staff/profile model.
-3. Enable Row Level Security.
-4. Add store-scoped policies for catalog reads and order operations.
-5. Test using a normal staff account, not a service key.
+Implemented in code:
+
+- Email/password staff sign-in with persistent native sessions.
+- `owner`, `manager`, and `cashier` staff roles.
+- An app-owned Auth repository/provider and protected Expo Router routes.
+- A responsive sign-in screen and Profile settings sign-out action.
+- `staff_profiles`, store-scoped RLS, read-only Data API privileges, and guarded
+  authenticated order RPCs in `supabase/migrations/0004_auth_and_rls.sql`.
+- Order creation records the authenticated user in `orders.staff_id`.
+
+**Completed setup:**
+
+1. Run all of
+   [`supabase/migrations/0004_auth_and_rls.sql`](../supabase/migrations/0004_auth_and_rls.sql)
+   in SQL Editor after migrations `0001`–`0003`.
+2. Create an email/password user in **Authentication → Users**.
+3. Link that Auth user to the seeded store with a `staff_profiles` row.
+4. Restart with `npm run dev:clear`, sign in, and test catalog/order access.
+5. Follow [Supabase Auth and RLS Setup](./supabase-auth-rls-testing.md), including
+   the cross-store isolation test. Use a normal staff account, not a service key.
+
+There is no public staff sign-up. Trusted operators create Auth users and assign
+their store/role; Step 9 can later add an owner-only staff-management surface.
 
 This must be in place before live Admin editing.
 
-## 9. Connect Admin mutations — we implement this
+## 9. Connect Admin mutations — code complete, setup pending
 
-1. Build a Supabase-backed `AdminRepository`.
-2. Persist category/item/modifier edits and availability changes.
-3. Apply the authenticated staff/RLS policies.
-4. Verify menu edits are reflected in the POS catalog without changing
-   submitted-order snapshots.
+Implemented in code:
+
+- A Supabase-backed `AdminRepository` loads draft and visible catalog data and
+  persists category creation/deletion, draft item creation, item publishing,
+  availability, and up to six custom modifier options.
+- Owner/manager mutation policies remain scoped to the authenticated staff
+  store. Cashiers retain catalog reads but cannot mutate catalog rows.
+- Category deletion and modifier replacement use guarded transactional RPCs.
+  Catalog foreign keys keep existing order name/price/modifier snapshots intact.
+- The POS catalog invalidates and reloads whenever the POS screen regains focus,
+  so newly published Admin changes are shown without restarting the app.
+
+**You still need to configure Supabase (once):**
+
+1. Run all of
+   [`supabase/migrations/0005_admin_catalog_mutations.sql`](../supabase/migrations/0005_admin_catalog_mutations.sql)
+   in SQL Editor after migration `0004`.
+2. Sign in as an `owner` or `manager`, open **Settings → Admin options**, and:
+   create a category/item, edit its name/description/price, press
+   **Save & publish**, change availability, and save modifier options.
+3. Return to the POS screen and confirm the published item, price, availability,
+   and modifiers reflect the Admin changes.
+4. Open an order placed before the edit and confirm its snapshotted item name,
+   price, and modifiers did not change.
+5. Sign in as a `cashier` and confirm the Admin workspace is denied and direct
+   catalog mutations are rejected by RLS.
 
 ---
 
 ## What to do now
 
-Steps 5 and 6 are verified. The Step 7 code is in place. To finish Step 7:
+1. Run
+   [`supabase/migrations/0005_admin_catalog_mutations.sql`](../supabase/migrations/0005_admin_catalog_mutations.sql).
+2. Restart Expo with `npm run dev:clear` and sign in as an owner or manager.
+3. Complete the Step 9 Admin → POS → historical-order verification above.
 
-1. Run [`supabase/migrations/0003_order_open_paid.sql`](../supabase/migrations/0003_order_open_paid.sql)
-   in the Supabase SQL Editor (after `0001` and `0002`).
-2. Restart Expo with `npm run dev:clear`.
-3. In the POS cart, try **Save** (creates an Open order) and **Charge** (creates
-   a Closed/paid order).
-4. Open the **Orders** screen and confirm the orders show under the **Open** and
-   **Closed** tabs; open an Open order and try **Mark as paid** / **Cancel order**.
-
-If anything fails, the UI shows the error message; share it and we can debug.
+If anything fails, share the exact UI or SQL error and we can debug it.
 
 Do **not** share the database password or `service_role` key.

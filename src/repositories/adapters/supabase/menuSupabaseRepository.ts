@@ -15,8 +15,8 @@
  *    numeric values as strings.
  *
  * The raw catalog fetch is memoized per adapter instance to avoid duplicate
- * round-trips when `getCategories()`/`getItems()` are called together. Catalog
- * mutations (Step 9 / Admin) must construct a fresh adapter or add invalidation.
+ * round-trips when `getCategories()`/`getItems()` are called together. Admin
+ * mutations invalidate that cache through the repository contract.
  */
 
 import { DEFAULT_CATEGORY_ID, TAX_RATE } from "@/lib/mockData";
@@ -90,12 +90,24 @@ function unwrap<T>(result: { data: T | null; error: { message: string } | null }
 /** Build the Supabase-backed menu repository. */
 export function createSupabaseMenuRepository(): MenuRepository {
   let cache: Promise<RawCatalog> | null = null;
+  let cacheUserId: string | null = null;
 
   /** Fetch (and memoize) all catalog tables needed to build view/canonical shapes. */
-  function loadRaw(): Promise<RawCatalog> {
+  async function loadRaw(): Promise<RawCatalog> {
+    const supabase = getSupabaseClient();
+    const { data: authData, error: authError } = await supabase.auth.getUser();
+    if (authError) throw new Error(`Failed to resolve staff session: ${authError.message}`);
+    const userId = authData.user?.id ?? null;
+
+    // Prevent a store catalog from surviving across sign-out/sign-in on a
+    // shared tablet. RLS still enforces access; this also keeps the UI current.
+    if (cacheUserId !== userId) {
+      cache = null;
+      cacheUserId = userId;
+    }
+
     if (!cache) {
       cache = (async () => {
-        const supabase = getSupabaseClient();
         const [categories, items, groups, options, links] = await Promise.all([
           supabase
             .from("menu_categories")
@@ -106,6 +118,7 @@ export function createSupabaseMenuRepository(): MenuRepository {
             .from("menu_items")
             .select("id, category_id, name, description, price, is_popular, is_available, visibility")
             .eq("visibility", "visible")
+            .eq("is_available", true)
             .order("name", { ascending: true })
             .then((r) => unwrap<MenuItemRow[]>(r, "items")),
           supabase
@@ -240,6 +253,10 @@ export function createSupabaseMenuRepository(): MenuRepository {
         items,
         modifierGroups,
       };
+    },
+
+    invalidateCatalog() {
+      cache = null;
     },
   };
 }

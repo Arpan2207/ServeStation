@@ -5,12 +5,13 @@
  * comes from Supabase (or the mock adapter) over an async call, so the UI needs
  * explicit loading/error/empty handling instead of reading module-level data.
  *
- * The hook fetches categories and items in parallel on mount, exposes a
- * `reload` for retry, and returns the synchronous config values
+ * The hook fetches categories and items in parallel whenever POS regains
+ * focus, exposes a `reload` for retry, and returns the synchronous config values
  * (`defaultCategoryId`, `taxRate`) alongside the loaded data.
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
+import { useFocusEffect } from "expo-router";
 
 import { menuRepository } from "@/repositories";
 import type { MenuCategory, MenuItem } from "@/types/pos";
@@ -65,13 +66,16 @@ export function useCatalog(): UseCatalog {
     }
   }, []);
 
-  useEffect(() => {
-    void load();
-    // Invalidate any in-flight request when the hook unmounts.
-    return () => {
-      activeRequestId.current += 1;
-    };
-  }, [load]);
+  useFocusEffect(
+    useCallback(() => {
+      // A catalog may have changed in Admin while the POS route stayed mounted.
+      menuRepository.invalidateCatalog();
+      void load();
+      return () => {
+        activeRequestId.current += 1;
+      };
+    }, [load])
+  );
 
   return {
     categories,

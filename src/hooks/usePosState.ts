@@ -144,6 +144,10 @@ export interface UsePosState {
   decrementLine: (lineId: string) => void;
   clearCart: () => void;
 
+  /* guest */
+  guestName: string;
+  setGuestName: (name: string) => void;
+
   /* order type + totals */
   orderType: OrderType;
   setOrderType: (type: OrderType) => void;
@@ -196,6 +200,7 @@ export function usePosState(): UsePosState {
     }
   }, [items, selectedItemId]);
   const [orderType, setOrderType] = useState<OrderType>("Dine-in");
+  const [guestName, setGuestName] = useState<string>("");
   const [lastPlacedSummary, setLastPlacedSummary] = useState<string | null>(
     null
   );
@@ -278,6 +283,8 @@ export function usePosState(): UsePosState {
 
   const clearCart = useCallback(() => {
     dispatch({ type: "CLEAR" });
+    setGuestName("");
+    setPlaceError(null);
   }, []);
 
   /* Derived cart figures. */
@@ -308,12 +315,18 @@ export function usePosState(): UsePosState {
   const placeOrder = useCallback(
     async (paid: boolean) => {
       if (cart.length === 0 || placingAction) return;
+      const trimmedGuestName = guestName.trim();
+      if (!trimmedGuestName) {
+        setPlaceError("Enter a guest name before submitting the order.");
+        return;
+      }
       setPlacingAction(paid ? "charge" : "save");
       setPlaceError(null);
       try {
         const input: OrderCreateInput = {
           orderNumber: generateOrderNumber(),
           fulfilmentType: fromPosOrderType(orderType),
+          customerName: trimmedGuestName,
           taxRate,
           paid,
           items: cart.map((line) => ({
@@ -335,6 +348,7 @@ export function usePosState(): UsePosState {
           `Order ${created.orderNumber} ${verb} · ${formatCurrency(created.money.total)}`
         );
         dispatch({ type: "CLEAR" });
+        setGuestName("");
       } catch (err) {
         setPlaceError(
           err instanceof Error ? err.message : "Failed to submit the order."
@@ -343,7 +357,7 @@ export function usePosState(): UsePosState {
         setPlacingAction(null);
       }
     },
-    [cart, placingAction, orderType, taxRate]
+    [cart, guestName, placingAction, orderType, taxRate]
   );
 
   /* Save the cart as an unpaid, open order. */
@@ -380,6 +394,9 @@ export function usePosState(): UsePosState {
     incrementLine,
     decrementLine,
     clearCart,
+
+    guestName,
+    setGuestName,
 
     orderType,
     setOrderType,
