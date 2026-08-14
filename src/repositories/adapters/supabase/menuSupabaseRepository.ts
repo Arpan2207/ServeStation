@@ -15,8 +15,8 @@
  *    numeric values as strings.
  *
  * The raw catalog fetch is memoized per adapter instance to avoid duplicate
- * round-trips when `getCategories()`/`getItems()` are called together. Catalog
- * mutations (Step 9 / Admin) must construct a fresh adapter or add invalidation.
+ * round-trips when `getCategories()`/`getItems()` are called together. Admin
+ * mutations invalidate that cache through the repository contract.
  */
 
 import { DEFAULT_CATEGORY_ID, TAX_RATE } from "@/lib/mockData";
@@ -118,6 +118,7 @@ export function createSupabaseMenuRepository(): MenuRepository {
             .from("menu_items")
             .select("id, category_id, name, description, price, is_popular, is_available, visibility")
             .eq("visibility", "visible")
+            .eq("is_available", true)
             .order("name", { ascending: true })
             .then((r) => unwrap<MenuItemRow[]>(r, "items")),
           supabase
@@ -252,6 +253,10 @@ export function createSupabaseMenuRepository(): MenuRepository {
         items,
         modifierGroups,
       };
+    },
+
+    invalidateCatalog() {
+      cache = null;
     },
   };
 }
