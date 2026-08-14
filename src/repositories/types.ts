@@ -15,9 +15,13 @@ import type {
 } from "@/domain/orders";
 import type {
   AdminCategory,
+  AdminCatalog,
+  AdminCreateItemInput,
   AdminFilterChip,
   AdminMenuItem,
+  AdminMenuItemPatch,
   AdminModifierGroup,
+  AdminModifierOption,
 } from "@/types/admin";
 import type { AuthSession, StaffProfile } from "@/types/auth";
 import type { MenuCategory, MenuItem } from "@/types/pos";
@@ -59,6 +63,8 @@ export interface MenuRepository {
   getTaxRate(): number;
   /** Canonical, backend-facing catalog snapshot (normalized). */
   getCatalog(): Promise<Catalog>;
+  /** Drop any memoized catalog so the next read observes Admin mutations. */
+  invalidateCatalog(): void;
 }
 
 /**
@@ -100,22 +106,27 @@ export interface OrdersRepository {
   cancelOrder(id: string, reason: string): Promise<CanonicalOrder>;
 }
 
-/** Reads for the Admin workspace (editable catalog + editor config). */
+/** Store-scoped reads and mutations for the Admin catalog workspace. */
 export interface AdminRepository {
-  /** Editable categories shown in the left panel. */
-  getCategories(): AdminCategory[];
-  /** Category selected on first mount. */
-  getDefaultCategoryId(): string;
-  /** Item selected on first mount. */
-  getDefaultItemId(): string;
-  /** All editable menu items (view shape, string prices). */
-  getItems(): AdminMenuItem[];
-  /** Modifier groups available in the editor. */
-  getModifierGroups(): AdminModifierGroup[];
+  /** Load the complete editable catalog visible to the signed-in store. */
+  getAdminCatalog(): Promise<AdminCatalog>;
   /** Top utility-row filter chips. */
   getFilterChips(): AdminFilterChip[];
   /** Format an editable numeric price string for display, e.g. "$13.50". */
   formatPrice(price: string): string;
   /** Canonical, backend-facing catalog derived from the admin data. */
-  getCatalog(): Catalog;
+  getCatalog(): Promise<Catalog>;
+  /** Create a category in the current staff member's store. */
+  createCategory(name: string): Promise<AdminCategory>;
+  /** Delete a category and its catalog items; order snapshots remain intact. */
+  deleteCategory(categoryId: string): Promise<void>;
+  /** Create a persisted draft item in a category. */
+  createItem(input: AdminCreateItemInput): Promise<AdminMenuItem>;
+  /** Persist editable fields or availability for one item. */
+  updateItem(itemId: string, patch: AdminMenuItemPatch): Promise<AdminMenuItem>;
+  /** Replace one item's modifier options atomically (maximum six). */
+  replaceModifierOptions(
+    itemId: string,
+    options: AdminModifierOption[]
+  ): Promise<AdminModifierGroup[]>;
 }

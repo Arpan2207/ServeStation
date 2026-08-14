@@ -1,303 +1,376 @@
-/**
- * Local, frontend-only state hook powering the Admin workspace screen.
- *
- * Combines simple `useState` UI state (selected category, selected item,
- * search text, active filter, action feedback) with a `useReducer`-driven
- * item collection so the editor's multiple related mutations (field edits,
- * visibility, stock status, modifier-group toggles, add, publish) stay
- * predictable. All values the UI needs (category counts, filtered items,
- * selected item) are derived here, keeping the screen presentational.
- */
+/** Async Admin workspace state backed by the active catalog repository. */
 
-import { useCallback, useMemo, useReducer, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useFocusEffect } from "expo-router";
 
-import { adminRepository } from "@/repositories";
+import { adminRepository, menuRepository } from "@/repositories";
 import type {
   AdminCategory,
   AdminEditableField,
   AdminFilterId,
   AdminMenuItem,
+  AdminModifierGroup,
+  AdminModifierOption,
 } from "@/types/admin";
-
-/* Admin catalog data sourced through the repository boundary. */
-const ADMIN_CATEGORIES: AdminCategory[] = adminRepository.getCategories();
-const ADMIN_MENU_ITEMS: AdminMenuItem[] = adminRepository.getItems();
-const DEFAULT_ADMIN_CATEGORY_ID: string = adminRepository.getDefaultCategoryId();
-const DEFAULT_ADMIN_ITEM_ID: string = adminRepository.getDefaultItemId();
-
-/* ── Items reducer ───────────────────────────────────── */
-
-/** Actions that mutate the editable item collection. */
-type ItemsAction =
-  | { type: "UPDATE_FIELD"; id: string; field: AdminEditableField; value: string }
-  | { type: "TOGGLE_MODIFIER_GROUP"; id: string; groupId: string }
-  | { type: "ADD_ITEM"; item: AdminMenuItem }
-  | { type: "PUBLISH"; id: string }
-  | { type: "MARK_UNAVAILABLE"; id: string }
-  | { type: "MARK_IN_STOCK"; id: string }
-  | { type: "DELETE_CATEGORY_ITEMS"; categoryId: string };
-
-/** Pure reducer for all item mutations. */
-function itemsReducer(state: AdminMenuItem[], action: ItemsAction): AdminMenuItem[] {
-  switch (action.type) {
-    case "UPDATE_FIELD":
-      return state.map((item) =>
-        item.id === action.id ? { ...item, [action.field]: action.value } : item
-      );
-    case "TOGGLE_MODIFIER_GROUP":
-      return state.map((item) => {
-        if (item.id !== action.id) return item;
-        const has = item.modifierGroupIds.includes(action.groupId);
-        return {
-          ...item,
-          modifierGroupIds: has
-            ? item.modifierGroupIds.filter((g) => g !== action.groupId)
-            : [...item.modifierGroupIds, action.groupId],
-        };
-      });
-    case "ADD_ITEM":
-      return [action.item, ...state];
-    case "PUBLISH":
-      return state.map((item) =>
-        item.id === action.id ? { ...item, visibility: "visible", needsReview: false } : item
-      );
-    case "MARK_UNAVAILABLE":
-      return state.map((item) =>
-        item.id === action.id ? { ...item, inStock: false } : item
-      );
-    case "MARK_IN_STOCK":
-      return state.map((item) =>
-        item.id === action.id ? { ...item, inStock: true, needsReview: false } : item
-      );
-    case "DELETE_CATEGORY_ITEMS":
-      return state.filter((item) => item.categoryId !== action.categoryId);
-    default:
-      return state;
-  }
-}
-
-/* ── Hook return shape ───────────────────────────────── */
 
 /** A category paired with its live item count for the left panel. */
 export interface AdminCategoryWithCount extends AdminCategory {
   count: number;
 }
 
+/** State and catalog actions consumed by the Admin workspace screen. */
 export interface UseAdminState {
-  /* selection + filters */
   categories: AdminCategoryWithCount[];
   selectedCategoryId: string;
   selectCategory: (categoryId: string) => void;
-  addCategory: (name: string) => boolean;
-  deleteCategory: () => void;
+  addCategory: (name: string) => Promise<boolean>;
+  deleteCategory: () => Promise<void>;
   searchText: string;
   setSearchText: (text: string) => void;
   activeFilterId: AdminFilterId;
   setFilter: (filterId: AdminFilterId) => void;
   filteredItems: AdminMenuItem[];
-
-  /* selected item + editor */
   selectedItem: AdminMenuItem | null;
   selectItem: (itemId: string) => void;
   updateField: (field: AdminEditableField, value: string) => void;
-  toggleModifierGroup: (groupId: string) => void;
-
-  /* actions */
-  addItem: () => void;
+  modifierOptions: AdminModifierOption[];
+  updateModifierOption: (
+    optionId: string,
+    field: "label" | "price",
+    value: string
+  ) => void;
+  saveModifierOptions: () => Promise<void>;
+  addItem: () => Promise<void>;
   bulkEdit: () => void;
-  publishItem: () => void;
-  markInStock: () => void;
-  markUnavailable: () => void;
-
-  /* local feedback */
+  publishItem: () => Promise<void>;
+  markInStock: () => Promise<void>;
+  markUnavailable: () => Promise<void>;
+  loading: boolean;
+  saving: boolean;
+  error: string | null;
+  reload: () => void;
   feedback: string | null;
 }
 
-/* ── Hook ────────────────────────────────────────────── */
+/** Return six editable slots, retaining persisted ids for existing options. */
+function modifierDrafts(
+  modifierGroupIds: string[],
+  groups: AdminModifierGroup[]
+): AdminModifierOption[] {
+  const linkedIds = new Set(modifierGroupIds);
+  const persisted = groups
+    .filter((group) => linkedIds.has(group.id))
+    .flatMap((group) => group.options)
+    .slice(0, 6)
+    .map((option) => ({ ...option }));
+  return [
+    ...persisted,
+    ...Array.from({ length: 6 - persisted.length }, (_, index) => ({
+      id: `draft-${index}`,
+      label: "",
+      price: "0.00",
+    })),
+  ];
+}
 
-/**
- * Provide all interactive Admin workspace state and handlers.
- * @returns Category/item selection, search + filter state, the editable
- * selected item, and the local action handlers the Admin components use.
- */
+/** Provide loaded Admin data, selection/filter state, and persistent mutations. */
 export function useAdminState(): UseAdminState {
-  const [items, dispatch] = useReducer(itemsReducer, ADMIN_MENU_ITEMS);
-  const [categoryList, setCategoryList] = useState<AdminCategory[]>(ADMIN_CATEGORIES);
-  const [selectedCategoryId, setSelectedCategoryId] = useState<string>(
-    DEFAULT_ADMIN_CATEGORY_ID
-  );
-  const [searchText, setSearchText] = useState<string>("");
+  const [categoryList, setCategoryList] = useState<AdminCategory[]>([]);
+  const [items, setItems] = useState<AdminMenuItem[]>([]);
+  const [modifierGroups, setModifierGroups] = useState<AdminModifierGroup[]>([]);
+  const [selectedCategoryId, setSelectedCategoryId] = useState("");
+  const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
+  const [modifierOptions, setModifierOptions] = useState<AdminModifierOption[]>([]);
+  const [searchText, setSearchText] = useState("");
   const [activeFilterId, setActiveFilterId] = useState<AdminFilterId>("all");
-  const [selectedItemId, setSelectedItemId] = useState<string | null>(
-    DEFAULT_ADMIN_ITEM_ID
-  );
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
+  const activeRequestId = useRef(0);
 
-  /* Categories paired with a live item count derived from the collection. */
+  const load = useCallback(async () => {
+    const requestId = ++activeRequestId.current;
+    setLoading(true);
+    setError(null);
+    try {
+      const catalog = await adminRepository.getAdminCatalog();
+      if (requestId !== activeRequestId.current) return;
+      setCategoryList(catalog.categories);
+      setItems(catalog.items);
+      setModifierGroups(catalog.modifierGroups);
+      const firstCategoryId = catalog.categories[0]?.id ?? "";
+      setSelectedCategoryId(firstCategoryId);
+      setSelectedItemId(
+        catalog.items.find((item) => item.categoryId === firstCategoryId)?.id ?? null
+      );
+    } catch (caught) {
+      if (requestId !== activeRequestId.current) return;
+      setError(caught instanceof Error ? caught.message : "Unable to load the Admin catalog.");
+    } finally {
+      if (requestId === activeRequestId.current) setLoading(false);
+    }
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      void load();
+      return () => {
+        activeRequestId.current += 1;
+      };
+    }, [load])
+  );
+
   const categories = useMemo<AdminCategoryWithCount[]>(
     () =>
-      categoryList.map((cat) => ({
-        ...cat,
-        count: items.filter((item) => item.categoryId === cat.id).length,
+      categoryList.map((category) => ({
+        ...category,
+        count: items.filter((item) => item.categoryId === category.id).length,
       })),
     [categoryList, items]
   );
 
-  /* Filter the catalog by active category, filter chip, and search text. */
   const filteredItems = useMemo(() => {
     const query = searchText.trim().toLowerCase();
     return items.filter((item) => {
-      const matchesCategory = item.categoryId === selectedCategoryId;
       const matchesFilter =
         activeFilterId === "all"
           ? true
           : activeFilterId === "in-stock"
             ? item.inStock
             : !item.inStock;
-      const matchesQuery =
-        query.length === 0 ||
-        item.name.toLowerCase().includes(query) ||
-        item.description.toLowerCase().includes(query);
-      return matchesCategory && matchesFilter && matchesQuery;
+      return (
+        item.categoryId === selectedCategoryId &&
+        matchesFilter &&
+        (!query ||
+          item.name.toLowerCase().includes(query) ||
+          item.description.toLowerCase().includes(query))
+      );
     });
-  }, [items, selectedCategoryId, activeFilterId, searchText]);
+  }, [activeFilterId, items, searchText, selectedCategoryId]);
 
-  /* Resolve the selected item from its id. */
   const selectedItem = useMemo(
     () => items.find((item) => item.id === selectedItemId) ?? null,
     [items, selectedItemId]
   );
 
-  const selectItem = useCallback((itemId: string) => {
-    setSelectedItemId(itemId);
+  const selectedModifierGroupKey = selectedItem?.modifierGroupIds.join("|") ?? "";
+
+  useEffect(() => {
+    setModifierOptions(
+      modifierDrafts(
+        selectedModifierGroupKey ? selectedModifierGroupKey.split("|") : [],
+        modifierGroups
+      )
+    );
+  }, [modifierGroups, selectedItemId, selectedModifierGroupKey]);
+
+  const fail = useCallback((caught: unknown, fallback: string) => {
     setFeedback(null);
+    setError(caught instanceof Error ? caught.message : fallback);
   }, []);
 
-  /* Switching category auto-selects the first item in that category so the
-     editor always reflects something relevant (when the category is empty,
-     selection is cleared and the editor shows its empty state). */
   const selectCategory = useCallback(
     (categoryId: string) => {
       setSelectedCategoryId(categoryId);
+      setSelectedItemId(items.find((item) => item.categoryId === categoryId)?.id ?? null);
       setFeedback(null);
-      const firstInCategory = items.find((item) => item.categoryId === categoryId);
-      setSelectedItemId(firstInCategory ? firstInCategory.id : null);
+      setError(null);
     },
     [items]
   );
 
-  /** Add a category to this local catalog and immediately make it active. */
+  const selectItem = useCallback((itemId: string) => {
+    setSelectedItemId(itemId);
+    setFeedback(null);
+    setError(null);
+  }, []);
+
   const addCategory = useCallback(
-    (name: string) => {
-      const trimmedName = name.trim();
-      if (!trimmedName) {
+    async (name: string) => {
+      const trimmed = name.trim();
+      if (!trimmed) {
         setFeedback("Enter a category name first.");
         return false;
       }
-
-      if (categoryList.some((category) => category.name.toLowerCase() === trimmedName.toLowerCase())) {
-        setFeedback(`"${trimmedName}" already exists.`);
+      if (categoryList.some((category) => category.name.toLowerCase() === trimmed.toLowerCase())) {
+        setFeedback(`"${trimmed}" already exists.`);
         return false;
       }
-
-      const baseId = trimmedName
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, "-")
-        .replace(/^-|-$/g, "") || "category";
-      const id = `${baseId}-${Date.now()}`;
-      setCategoryList((current) => [...current, { id, name: trimmedName }]);
-      setSelectedCategoryId(id);
-      setSelectedItemId(null);
-      setSearchText("");
-      setActiveFilterId("all");
-      setFeedback(`Added "${trimmedName}".`);
-      return true;
+      setSaving(true);
+      setError(null);
+      try {
+        const category = await adminRepository.createCategory(trimmed);
+        setCategoryList((current) => [...current, category]);
+        setSelectedCategoryId(category.id);
+        setSelectedItemId(null);
+        setFeedback(`Added "${category.name}".`);
+        menuRepository.invalidateCatalog();
+        return true;
+      } catch (caught) {
+        fail(caught, "Unable to add the category.");
+        return false;
+      } finally {
+        setSaving(false);
+      }
     },
-    [categoryList]
+    [categoryList, fail]
   );
 
-  /** Remove the selected category and its local-only items after UI confirmation. */
-  const deleteCategory = useCallback(() => {
-    const category = categoryList.find((current) => current.id === selectedCategoryId);
+  const deleteCategory = useCallback(async () => {
+    const category = categoryList.find((candidate) => candidate.id === selectedCategoryId);
     if (!category) return;
     if (categoryList.length === 1) {
       setFeedback("Add another category before deleting the last one.");
       return;
     }
+    setSaving(true);
+    setError(null);
+    try {
+      await adminRepository.deleteCategory(category.id);
+      const remainingCategories = categoryList.filter((candidate) => candidate.id !== category.id);
+      const remainingItems = items.filter((item) => item.categoryId !== category.id);
+      const nextCategory = remainingCategories[0];
+      setCategoryList(remainingCategories);
+      setItems(remainingItems);
+      setSelectedCategoryId(nextCategory?.id ?? "");
+      setSelectedItemId(
+        remainingItems.find((item) => item.categoryId === nextCategory?.id)?.id ?? null
+      );
+      setFeedback(`Deleted "${category.name}" and its catalog items.`);
+      menuRepository.invalidateCatalog();
+    } catch (caught) {
+      fail(caught, "Unable to delete the category.");
+    } finally {
+      setSaving(false);
+    }
+  }, [categoryList, fail, items, selectedCategoryId]);
 
-    const remainingCategories = categoryList.filter((current) => current.id !== category.id);
-    setCategoryList(remainingCategories);
-    dispatch({ type: "DELETE_CATEGORY_ITEMS", categoryId: category.id });
-
-    const nextCategory = remainingCategories[0];
-    setSelectedCategoryId(nextCategory?.id ?? "");
-    setSelectedItemId(items.find((item) => item.categoryId === nextCategory?.id)?.id ?? null);
-    setFeedback(`Deleted "${category.name}" and its ${items.filter((item) => item.categoryId === category.id).length} local item(s).`);
-  }, [categoryList, items, selectedCategoryId]);
-
-  const setFilter = useCallback((filterId: AdminFilterId) => {
-    setActiveFilterId(filterId);
-  }, []);
-
-  /* Editor field edits update the selected item in place (live). */
   const updateField = useCallback(
     (field: AdminEditableField, value: string) => {
       if (!selectedItemId) return;
-      dispatch({ type: "UPDATE_FIELD", id: selectedItemId, field, value });
+      setItems((current) =>
+        current.map((item) => (item.id === selectedItemId ? { ...item, [field]: value } : item))
+      );
+      setFeedback("Unsaved item changes. Publish to save them.");
+      setError(null);
     },
     [selectedItemId]
   );
 
-  const toggleModifierGroup = useCallback(
-    (groupId: string) => {
-      if (!selectedItemId) return;
-      dispatch({ type: "TOGGLE_MODIFIER_GROUP", id: selectedItemId, groupId });
+  const updateModifierOption = useCallback(
+    (optionId: string, field: "label" | "price", value: string) => {
+      setModifierOptions((current) =>
+        current.map((option) => (option.id === optionId ? { ...option, [field]: value } : option))
+      );
+      setFeedback("Unsaved modifier changes.");
+      setError(null);
     },
-    [selectedItemId]
+    []
   );
 
-  /* Mock "Add item": create a draft item in the active category and focus it. */
-  const addItem = useCallback(() => {
-    const newId = `item-${Date.now()}`;
-    const newItem: AdminMenuItem = {
-      id: newId,
-      name: "New item",
-      description: "Add a short description for this item.",
-      price: "0.00",
-      categoryId: selectedCategoryId,
-      visibility: "draft",
-      inStock: true,
-      needsReview: true,
-      modifierGroupIds: [],
-    };
-    dispatch({ type: "ADD_ITEM", item: newItem });
-    setSelectedItemId(newId);
-    setSearchText("");
-    setActiveFilterId("all");
-    setFeedback("Added new item");
-  }, [selectedCategoryId]);
+  const addItem = useCallback(async () => {
+    if (!selectedCategoryId) {
+      setFeedback("Create or select a category first.");
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    try {
+      const item = await adminRepository.createItem({
+        categoryId: selectedCategoryId,
+        name: "New item",
+        description: "Add a short description for this item.",
+        price: "0.00",
+      });
+      setItems((current) => [item, ...current]);
+      setSelectedItemId(item.id);
+      setSearchText("");
+      setActiveFilterId("all");
+      setFeedback("Draft item created. Edit it, then publish to save changes.");
+    } catch (caught) {
+      fail(caught, "Unable to create the item.");
+    } finally {
+      setSaving(false);
+    }
+  }, [fail, selectedCategoryId]);
+
+  const publishItem = useCallback(async () => {
+    if (!selectedItem) return;
+    setSaving(true);
+    setError(null);
+    try {
+      const updated = await adminRepository.updateItem(selectedItem.id, {
+        name: selectedItem.name,
+        description: selectedItem.description,
+        price: selectedItem.price,
+        visibility: "visible",
+      });
+      setItems((current) => current.map((item) => (item.id === updated.id ? updated : item)));
+      setFeedback(`Saved and published "${updated.name}".`);
+      menuRepository.invalidateCatalog();
+    } catch (caught) {
+      fail(caught, "Unable to publish the item.");
+    } finally {
+      setSaving(false);
+    }
+  }, [fail, selectedItem]);
+
+  const setAvailability = useCallback(
+    async (inStock: boolean) => {
+      if (!selectedItem) return;
+      setSaving(true);
+      setError(null);
+      try {
+        const updated = await adminRepository.updateItem(selectedItem.id, { inStock });
+        // Availability saves independently; retain any item-field edits that
+        // are still waiting for Save & publish.
+        setItems((current) =>
+          current.map((item) =>
+            item.id === updated.id ? { ...item, inStock: updated.inStock } : item
+          )
+        );
+        setFeedback(`Marked "${selectedItem.name}" ${inStock ? "in stock" : "unavailable"}.`);
+        menuRepository.invalidateCatalog();
+      } catch (caught) {
+        fail(caught, "Unable to update availability.");
+      } finally {
+        setSaving(false);
+      }
+    },
+    [fail, selectedItem]
+  );
+
+  const saveModifierOptions = useCallback(async () => {
+    if (!selectedItem) return;
+    const populated = modifierOptions.filter((option) => option.label.trim());
+    setSaving(true);
+    setError(null);
+    try {
+      const groups = await adminRepository.replaceModifierOptions(selectedItem.id, populated);
+      const groupIds = groups.map((group) => group.id);
+      setModifierGroups((current) => [
+        ...current.filter((group) => !selectedItem.modifierGroupIds.includes(group.id)),
+        ...groups,
+      ]);
+      setItems((current) =>
+        current.map((item) =>
+          item.id === selectedItem.id ? { ...item, modifierGroupIds: groupIds } : item
+        )
+      );
+      setModifierOptions(modifierDrafts(groupIds, groups));
+      setFeedback("Modifier options saved.");
+      menuRepository.invalidateCatalog();
+    } catch (caught) {
+      fail(caught, "Unable to save modifier options.");
+    } finally {
+      setSaving(false);
+    }
+  }, [fail, modifierOptions, selectedItem]);
 
   const bulkEdit = useCallback(() => {
-    setFeedback("Bulk edit is a mock action for now.");
+    setFeedback("Bulk edit is not connected yet.");
   }, []);
-
-  const publishItem = useCallback(() => {
-    if (!selectedItem) return;
-    dispatch({ type: "PUBLISH", id: selectedItem.id });
-    setFeedback(`Published "${selectedItem.name}".`);
-  }, [selectedItem]);
-
-  const markInStock = useCallback(() => {
-    if (!selectedItem) return;
-    dispatch({ type: "MARK_IN_STOCK", id: selectedItem.id });
-    setFeedback(`Marked "${selectedItem.name}" in stock.`);
-  }, [selectedItem]);
-
-  const markUnavailable = useCallback(() => {
-    if (!selectedItem) return;
-    dispatch({ type: "MARK_UNAVAILABLE", id: selectedItem.id });
-    setFeedback(`Marked "${selectedItem.name}" unavailable.`);
-  }, [selectedItem]);
 
   return {
     categories,
@@ -308,20 +381,23 @@ export function useAdminState(): UseAdminState {
     searchText,
     setSearchText,
     activeFilterId,
-    setFilter,
+    setFilter: setActiveFilterId,
     filteredItems,
-
     selectedItem,
     selectItem,
     updateField,
-    toggleModifierGroup,
-
+    modifierOptions,
+    updateModifierOption,
+    saveModifierOptions,
     addItem,
     bulkEdit,
     publishItem,
-    markInStock,
-    markUnavailable,
-
+    markInStock: () => setAvailability(true),
+    markUnavailable: () => setAvailability(false),
+    loading,
+    saving,
+    error,
+    reload: () => void load(),
     feedback,
   };
 }

@@ -77,13 +77,19 @@ export function adminCategoryToCanonical(category: AdminCategory): MenuCategory 
 
 /**
  * Convert an Admin modifier group into a canonical modifier group.
- * The mock admin data does not yet link concrete options, so `options` starts
- * empty and is populated once modifier editing is backed by real data.
  * @param group Admin modifier group ({ id, label }).
  * @returns The canonical modifier group.
  */
 export function adminModifierGroupToCanonical(group: AdminModifierGroup): ModifierGroup {
-  return { id: group.id, label: group.label, options: [] };
+  return {
+    id: group.id,
+    label: group.label,
+    options: group.options.map((option) => ({
+      id: option.id,
+      label: option.label,
+      priceDelta: parseMoney(option.price),
+    })),
+  };
 }
 
 /**

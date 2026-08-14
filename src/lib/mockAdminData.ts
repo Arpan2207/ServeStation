@@ -28,10 +28,32 @@ export const DEFAULT_ADMIN_CATEGORY_ID = "burgers";
 /* ── Modifier groups ─────────────────────────────────── */
 
 export const ADMIN_MODIFIER_GROUPS: AdminModifierGroup[] = [
-  { id: "sides-upgrade", label: "Sides upgrade" },
-  { id: "sauces", label: "Sauces" },
-  { id: "bun-style", label: "Bun style" },
-  { id: "cheese-add-ons", label: "Cheese add-ons" },
+  {
+    id: "sides-upgrade",
+    label: "Sides upgrade",
+    options: [
+      { id: "extra-pickles", label: "Extra pickles", price: "0.50" },
+      { id: "add-avocado", label: "Add avocado", price: "1.25" },
+    ],
+  },
+  {
+    id: "sauces",
+    label: "Sauces",
+    options: [
+      { id: "no-onions", label: "No onions", price: "0.00" },
+      { id: "light-sauce", label: "Light sauce", price: "0.00" },
+    ],
+  },
+  {
+    id: "bun-style",
+    label: "Bun style",
+    options: [{ id: "gf-bun", label: "Gluten-free bun", price: "1.50" }],
+  },
+  {
+    id: "cheese-add-ons",
+    label: "Cheese add-ons",
+    options: [{ id: "no-tomato", label: "No tomato", price: "0.00" }],
+  },
 ];
 
 /* ── Filter chips ────────────────────────────────────── */

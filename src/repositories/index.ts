@@ -16,6 +16,7 @@ import { createMockOrdersRepository } from "./adapters/mock/ordersMockRepository
 import { createSupabaseMenuRepository } from "./adapters/supabase/menuSupabaseRepository";
 import { createSupabaseOrdersRepository } from "./adapters/supabase/ordersSupabaseRepository";
 import { createSupabaseAuthRepository } from "./adapters/supabase/authSupabaseRepository";
+import { createSupabaseAdminRepository } from "./adapters/supabase/adminSupabaseRepository";
 import type {
   AdminRepository,
   AuthRepository,
@@ -54,8 +55,10 @@ export const authRepository: AuthRepository = supabaseConfigured
   ? createSupabaseAuthRepository()
   : createMockAuthRepository();
 
-/** Active admin catalog repository (mock-backed for now). */
-export const adminRepository: AdminRepository = createMockAdminRepository();
+/** Active Admin catalog repository, including Step 9 mutations. */
+export const adminRepository: AdminRepository = supabaseConfigured
+  ? createSupabaseAdminRepository()
+  : createMockAdminRepository();
 
 export type {
   AdminRepository,
